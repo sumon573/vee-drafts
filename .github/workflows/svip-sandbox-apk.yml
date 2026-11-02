@@ -53,6 +53,7 @@ jobs:
       - name: Prepare isolated UI-only sandbox
         env:
           VEE_SANDBOX_EAS_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
+          VEE_SANDBOX_EXPO_OWNER: ${{ vars.VEE_SANDBOX_EXPO_OWNER }}
         run: node draft/tools/prepare-svip-sandbox.cjs draft/source
       - name: TypeScript preflight
         working-directory: draft/source/artifacts/vee
