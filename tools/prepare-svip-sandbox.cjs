@@ -154,6 +154,15 @@ const eas = {
 };
 write(path.join(appRoot,'eas.json'), JSON.stringify(eas,null,2)+'\n');
 
+// Scoped TypeScript gate: check ONLY the files the sandbox ships. The frozen
+// tree contains production files with pre-existing errors (dead modules and
+// optional Expo packages that are not installed) which Metro never bundles
+// and which must not fail the sandbox build.
+write(path.join(appRoot,'tsconfig.sandbox.json'), JSON.stringify({
+  extends: './tsconfig.json',
+  include: ['expo-env.d.ts','app/_layout.tsx','app/index.tsx','src/features/svip/VeeRoyalSvipScreen.tsx','src/features/svip/svipRoyalDesignConfig.ts'],
+}, null, 2) + '\n');
+
 const previewRoutes=fs.readdirSync(routeDir).sort().join(',');
 assert(previewRoutes === '_layout.tsx,index.tsx','Unsafe routes survived in preview: '+previewRoutes);
 const cfgVerify=readJson(cfgPath);
@@ -163,6 +172,7 @@ assert(cfgVerify.expo.android.package===sandboxPackage, 'Not isolated Android ID
 assert(cfgVerify.expo.runtimeVersion===sandboxRuntime,'Not isolated runtime.');
 assert(!cfgVerify.expo.android.googleServicesFile,'Production Google Services file is still configured.');
 assert(easVerify.build['svip-sandbox'].channel===sandboxChannel,'Unsafe OTA channel');
+assert(has(path.join(appRoot,'tsconfig.sandbox.json')), 'Sandbox tsconfig missing.');
 assert(!('production' in easVerify.build),'Production EAS profile must not exist in sandbox.');
 
 const importedCode=fs.readFileSync(path.join(appRoot,'src/features/svip/VeeRoyalSvipScreen.tsx'),'utf8');

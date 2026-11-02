@@ -55,9 +55,9 @@ jobs:
           VEE_SANDBOX_EAS_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
           VEE_SANDBOX_EXPO_OWNER: ${{ vars.VEE_SANDBOX_EXPO_OWNER }}
         run: node draft/tools/prepare-svip-sandbox.cjs draft/source
-      - name: TypeScript preflight
+      - name: TypeScript preflight (sandbox files only)
         working-directory: draft/source/artifacts/vee
-        run: pnpm exec tsc --noEmit -p tsconfig.json
+        run: pnpm exec tsc --noEmit -p tsconfig.sandbox.json
       - name: Configure Expo EAS
         uses: expo/expo-github-action@v8
         with:
