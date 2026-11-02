@@ -1,0 +1,63 @@
+name: Vee SVIP Sandbox APK (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type BUILD_SVIP_SANDBOX to build only the isolated UI test APK'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: vee-svip-sandbox-build
+  cancel-in-progress: false
+jobs:
+  test-apk:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'BUILD_SVIP_SANDBOX'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Require build secrets
+        shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          VEE_SOURCE_READ_TOKEN: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN" || { echo "Missing EXPO_TOKEN secret"; exit 1; }
+          test -n "$VEE_SOURCE_READ_TOKEN" || { echo "Missing VEE_SOURCE_READ_TOKEN secret"; exit 1; }
+      - name: Checkout draft
+        uses: actions/checkout@v4
+        with:
+          path: draft
+          persist-credentials: false
+      - name: Checkout frozen source at exact SHA
+        uses: actions/checkout@v4
+        with:
+          repository: sumon573/Updated-vee-code
+          ref: 46fe4e3974a1d02fe806da1ed55c2ee8ef2093a5
+          path: draft/source
+          token: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+      - name: Install existing dependencies
+        working-directory: draft/source
+        run: pnpm install --frozen-lockfile
+      - name: Prepare isolated UI-only sandbox
+        run: node draft/tools/prepare-svip-sandbox.cjs draft/source
+      - name: TypeScript preflight
+        working-directory: draft/source/artifacts/vee
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+      - name: Configure Expo EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Build Android sandbox APK without OTA publish
+        working-directory: draft/source/artifacts/vee
+        run: eas build --platform android --profile svip-sandbox --non-interactive --wait
