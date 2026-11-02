@@ -26,9 +26,11 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
           VEE_SOURCE_READ_TOKEN: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+          VEE_SANDBOX_EAS_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
         run: |
           test -n "$EXPO_TOKEN" || { echo "Missing EXPO_TOKEN secret"; exit 1; }
           test -n "$VEE_SOURCE_READ_TOKEN" || { echo "Missing VEE_SOURCE_READ_TOKEN secret"; exit 1; }
+          test -n "$VEE_SANDBOX_EAS_PROJECT_ID" || { echo "Missing VEE_SANDBOX_EAS_PROJECT_ID secret"; exit 1; }
       - name: Checkout approved draft
         uses: actions/checkout@v4
         with:
@@ -53,6 +55,8 @@ jobs:
         working-directory: draft/source
         run: pnpm install --frozen-lockfile
       - name: Prepare and verify isolated sandbox
+        env:
+          VEE_SANDBOX_EAS_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
         run: node draft/tools/prepare-svip-sandbox.cjs draft/source
       - name: TypeScript preflight
         working-directory: draft/source/artifacts/vee
