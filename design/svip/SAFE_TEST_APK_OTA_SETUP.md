@@ -21,6 +21,8 @@ In **vee-drafts → Settings → Secrets and variables → Actions**, add:
 
 Do not set up credentials until you have created a separate Expo sandbox project. Never expose Expo or GitHub tokens in source code or chat. GitHub Actions logs and Expo build configuration should be reviewed before the first run.
 
+Expo owner: the sandbox app keeps the original `owner` (`jegata5150s-team`) unless the repo variable `VEE_SANDBOX_EXPO_OWNER` is set. Create the sandbox project under the same Expo account and no owner change is needed. If the sandbox project lives under a different Expo account, set that repo variable (a plain variable, not a secret) to the sandbox account's owner slug so the temporary sandbox config points at the right account.
+
 ## Manual build
 1. Open the [SVIP sandbox APK workflow](https://github.com/sumon573/vee-drafts/actions/workflows/svip-sandbox-apk.yml) on branch `main`.
 2. Click **Run workflow**, type `BUILD_SVIP_SANDBOX`, launch.
