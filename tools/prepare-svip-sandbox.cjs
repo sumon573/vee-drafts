@@ -23,6 +23,7 @@ const sandboxChannel = 'vee-svip-sandbox';
 const sandboxRuntime = 'vee-svip-sandbox-v1';
 const sandboxPackage = 'com.vee.app.sviptest';
 const sandboxProjectId = process.env.VEE_SANDBOX_EAS_PROJECT_ID || '';
+const sandboxOwner = process.env.VEE_SANDBOX_EXPO_OWNER || '';
 
 const baseEmblemUrls = {
   1: 'https://vee-club.duckdns.org/m/8548210f9c98881c7f0d3b7637510985',
@@ -121,6 +122,7 @@ write(path.join(routeDir,'index.tsx'), index);
 // additionally target the explicit sandbox channel only.
 cfg.expo.extra = cfg.expo.extra || {};
 cfg.expo.extra.eas = {projectId: sandboxProjectId};
+if (sandboxOwner) cfg.expo.owner = sandboxOwner;
 cfg.expo.updates.url = 'https://u.expo.dev/' + sandboxProjectId;
 cfg.expo.name = 'Vee SVIP Sandbox';
 cfg.expo.android.package = sandboxPackage;
@@ -169,6 +171,7 @@ assert(!/from ['"](?:firebase|@firebase|expo-router|@\/src\/context)/.test(impor
 assert(!/fetch\(|\.set\(|\.update\(/.test(importedCode), 'Draft UI contains unreviewed external writes.');
 console.log('PASS: immutable source SHA:',sourceCommit);
 console.log('PASS: independent Expo sandbox project ID verified');
+console.log('PASS: Expo owner:', cfgVerify.expo.owner);
 console.log('PASS: sandbox package:',sandboxPackage,'channel:',sandboxChannel,'runtime:',sandboxRuntime);
 console.log('PASS: routes:',previewRoutes,'no imported auth/database/wallet in sandbox UI');
 console.log('ART:', approvedArtLoaded ? 'All 10 approved WebP files included' : 'No art uploaded: legacy public emblem images used as read-only preview');
