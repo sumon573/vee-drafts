@@ -22,6 +22,8 @@ const immutableBase = '46fe4e3974a1d02fe806da1ed55c2ee8ef2093a5';
 const sandboxChannel = 'vee-svip-sandbox';
 const sandboxRuntime = 'vee-svip-sandbox-v1';
 const sandboxPackage = 'com.vee.app.sviptest';
+const sandboxProjectId = process.env.VEE_SANDBOX_EAS_PROJECT_ID || '';
+
 const baseEmblemUrls = {
   1: 'https://vee-club.duckdns.org/m/8548210f9c98881c7f0d3b7637510985',
   2: 'https://vee-club.duckdns.org/m/26685caf5e67ec37594177371ebb0a2b',
@@ -32,6 +34,8 @@ const baseEmblemUrls = {
 function assert(test, message) {
   if (!test) throw new Error('SAFE-SANDBOX PRECHECK FAILED: ' + message);
 }
+assert(/^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(sandboxProjectId), 'Separate sandbox EAS project id secret required.');
+assert(sandboxProjectId !== '76af2941-e66e-4252-afd1-bed9f3745348','Sandbox project must differ from LIVE EAS project.');
 function readJson(p) { return JSON.parse(fs.readFileSync(p, 'utf8')); }
 function write(p, text) { fs.mkdirSync(path.dirname(p), { recursive: true }); fs.writeFileSync(p, text); }
 function copyFile(from, to) { fs.mkdirSync(path.dirname(to), { recursive: true }); fs.copyFileSync(from, to); }
@@ -115,6 +119,9 @@ write(path.join(routeDir,'index.tsx'), index);
 // Isolated application ID, scheme, EAS update channel and runtime.
 // Runtime intentionally differs from production. Every publish command MUST
 // additionally target the explicit sandbox channel only.
+cfg.expo.extra = cfg.expo.extra || {};
+cfg.expo.extra.eas = {projectId: sandboxProjectId};
+cfg.expo.updates.url = 'https://u.expo.dev/' + sandboxProjectId;
 cfg.expo.name = 'Vee SVIP Sandbox';
 cfg.expo.android.package = sandboxPackage;
 cfg.expo.scheme = 'vee-svip-sandbox';
@@ -149,6 +156,7 @@ const previewRoutes=fs.readdirSync(routeDir).sort().join(',');
 assert(previewRoutes === '_layout.tsx,index.tsx','Unsafe routes survived in preview: '+previewRoutes);
 const cfgVerify=readJson(cfgPath);
 const easVerify=readJson(path.join(appRoot,'eas.json'));
+assert(cfgVerify.expo.extra.eas.projectId===sandboxProjectId && cfgVerify.expo.updates.url === 'https://u.expo.dev/'+sandboxProjectId, 'Live Expo project URL survived sandbox sanitizing.');
 assert(cfgVerify.expo.android.package===sandboxPackage, 'Not isolated Android ID.');
 assert(cfgVerify.expo.runtimeVersion===sandboxRuntime,'Not isolated runtime.');
 assert(!cfgVerify.expo.android.googleServicesFile,'Production Google Services file is still configured.');
@@ -160,6 +168,7 @@ assert(!/from ['"](?:firebase|@firebase|expo-router|@\/src\/context)/.test(impor
  'Draft UI imports production auth, Firebase or router.');
 assert(!/fetch\(|\.set\(|\.update\(/.test(importedCode), 'Draft UI contains unreviewed external writes.');
 console.log('PASS: immutable source SHA:',sourceCommit);
+console.log('PASS: independent Expo sandbox project ID verified');
 console.log('PASS: sandbox package:',sandboxPackage,'channel:',sandboxChannel,'runtime:',sandboxRuntime);
 console.log('PASS: routes:',previewRoutes,'no imported auth/database/wallet in sandbox UI');
 console.log('ART:', approvedArtLoaded ? 'All 10 approved WebP files included' : 'No art uploaded: legacy public emblem images used as read-only preview');
