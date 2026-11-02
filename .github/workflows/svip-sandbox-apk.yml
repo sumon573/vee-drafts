@@ -61,7 +61,7 @@ jobs:
       - name: Configure Expo EAS
         uses: expo/expo-github-action@v8
         with:
-          eas-version: latest
+          eas-version: 25.3.0
           token: ${{ secrets.EXPO_TOKEN }}
       - name: Build Android sandbox APK without OTA publish
         working-directory: draft/source/artifacts/vee
