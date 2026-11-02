@@ -1,0 +1,83 @@
+name: Vee SVIP Sandbox OTA (manual only)
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type UPDATE_SVIP_SANDBOX to publish ONLY to vee-svip-sandbox test channel'
+        required: true
+        type: string
+      note:
+        description: 'Short test-update description (no secrets)'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: vee-svip-sandbox-update
+  cancel-in-progress: false
+jobs:
+  sandbox-ota:
+    if: github.ref == 'refs/heads/main' && inputs.confirmation == 'UPDATE_SVIP_SANDBOX'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Require Expo and source credentials
+        shell: bash
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          VEE_SOURCE_READ_TOKEN: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+        run: |
+          test -n "$EXPO_TOKEN" || { echo "Missing EXPO_TOKEN secret"; exit 1; }
+          test -n "$VEE_SOURCE_READ_TOKEN" || { echo "Missing VEE_SOURCE_READ_TOKEN secret"; exit 1; }
+      - name: Checkout approved draft
+        uses: actions/checkout@v4
+        with:
+          path: draft
+          persist-credentials: false
+      - name: Checkout pinned original source (read only)
+        uses: actions/checkout@v4
+        with:
+          repository: sumon573/Updated-vee-code
+          ref: 46fe4e3974a1d02fe806da1ed55c2ee8ef2093a5
+          path: draft/source
+          token: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+          persist-credentials: false
+      - name: Install Node and pnpm
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+        with:
+          version: '10'
+      - name: Install existing dependencies
+        working-directory: draft/source
+        run: pnpm install --frozen-lockfile
+      - name: Prepare and verify isolated sandbox
+        run: node draft/tools/prepare-svip-sandbox.cjs draft/source
+      - name: TypeScript preflight
+        working-directory: draft/source/artifacts/vee
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+      - name: Verify test-only package runtime and update channel
+        working-directory: draft/source/artifacts/vee
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const a = require('./app.json').expo;
+          const e = require('./eas.json').build['svip-sandbox'];
+          if (a.android.package !== 'com.vee.app.sviptest' || a.runtimeVersion !== 'vee-svip-sandbox-v1' || e.channel !== 'vee-svip-sandbox' || e.developmentClient === true) {
+            throw new Error('Unsafe update destination. Publish blocked.');
+          }
+          console.log('Confirmed isolated sandbox only.');
+          NODE
+      - name: Configure Expo
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+      - name: Publish update ONLY to sandbox channel
+        working-directory: draft/source/artifacts/vee
+        shell: bash
+        env:
+          UPDATE_NOTE: ${{ inputs.note }}
+        run: |
+          eas update --channel vee-svip-sandbox --message "SVIP sandbox visual preview: $UPDATE_NOTE" --non-interactive
