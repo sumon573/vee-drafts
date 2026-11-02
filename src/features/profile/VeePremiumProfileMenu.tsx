@@ -313,7 +313,7 @@ const styles = StyleSheet.create({
   menuRow: { height: 65, paddingHorizontal: 18, flexDirection: 'row', alignItems: 'center' },
   rowPressed: { opacity: 0.78 },
   menuGlyph: { width: 43, marginRight: 6, alignItems: 'flex-start', justifyContent: 'center' },
-  menuLabel: { color: P.ink, flex: 1, minWidth: 0, fontSize: 16.5, fontWeight: '650' },
+  menuLabel: { color: P.ink, flex: 1, minWidth: 0, fontSize: 16.5, fontWeight: '600' },
   menuDetail: { color: P.muted, marginLeft: 5, marginRight: 4, fontSize: 13.5, fontWeight: '500', maxWidth: 98 },
   statusIcon: { marginRight: 6 },
   divider: { height: StyleSheet.hairlineWidth, backgroundColor: P.border, position: 'absolute', bottom: 0, right: 16, left: 18 },
