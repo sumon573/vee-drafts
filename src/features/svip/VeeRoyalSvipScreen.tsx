@@ -33,13 +33,13 @@ export interface VeeSvipPrivilege {
 
 export interface VeeSvipDesignAssets {
   /** Host resolves the SERVER's art URLs (svip_design), falling back to existing live art. */
-  emblemUrls?: Partial<Record<number, string>>;
+  emblemUrls?: Partial<Record<number, string | number>>;
   /** Static tier badges; never animate these. */
-  badgeUrls?: Partial<Record<number, string>>;
+  badgeUrls?: Partial<Record<number, string | number>>;
   /** Static approved dragon frame overlays, NOT an added entitlement. */
-  frameUrls?: Partial<Record<number, string>>;
-  nameplateUrls?: Partial<Record<number, string>>;
-  privilegeUrls?: Partial<Record<PrivilegeKey, string>>;
+  frameUrls?: Partial<Record<number, string | number>>;
+  nameplateUrls?: Partial<Record<number, string | number>>;
+  privilegeUrls?: Partial<Record<PrivilegeKey, string | number>>;
 }
 
 export interface VeeRoyalSvipProps {
@@ -50,6 +50,7 @@ export interface VeeRoyalSvipProps {
   validUntilLabel?: string | null;
   isWaitlisted: boolean;
   isJoining: boolean;
+  previewOnly?: boolean;
   onBack: () => void;
   onJoinWaitlist: () => void;
   /** Optional: host-approved one-shot preview. NEVER auto-loop. */
@@ -95,13 +96,13 @@ function Icon({ kind, size = 22, color = C.gold }: { kind: PrivilegeKey | 'back'
 }
 
 const PrivilegeCard = memo(function PrivilegeCard({ item, tier, imageUrl }: {
-  item: VeeSvipPrivilege; tier: number; imageUrl?: string;
+  item: VeeSvipPrivilege; tier: number; imageUrl?: string | number;
 }) {
   const unlockedForTier = tier >= item.minTier; // design tier, NOT user's entitlement
   return (
     <View style={[styles.privilege, !unlockedForTier && styles.locked]} accessible accessibilityLabel={item.name + (unlockedForTier ? ' included in tier' : ' starts at SVIP ' + item.minTier)}>
       <View style={styles.privilegeArt}>
-        {imageUrl ? <Image source={{ uri: imageUrl }} style={styles.privilegeImage} contentFit="contain" cachePolicy="memory-disk" transition={0} /> :
+        {imageUrl ? <Image source={typeof imageUrl === 'number' ? imageUrl : { uri: imageUrl }} style={styles.privilegeImage} contentFit="contain" cachePolicy="memory-disk" transition={0} /> :
           <Icon kind={item.key} size={29} color={unlockedForTier ? C.gold : C.muted} />}
       </View>
       <Text style={styles.privilegeName} numberOfLines={2}>{item.name}</Text>
@@ -112,7 +113,7 @@ const PrivilegeCard = memo(function PrivilegeCard({ item, tier, imageUrl }: {
 
 function VeeRoyalSvipScreen({
   tiers, privileges, assets, activeTier, validUntilLabel,
-  isWaitlisted, isJoining, onBack, onJoinWaitlist, onPreviewEntryEffect,
+  isWaitlisted, isJoining, previewOnly = false, onBack, onJoinWaitlist, onPreviewEntryEffect,
 }: VeeRoyalSvipProps) {
   const [selectedTier, setSelectedTier] = useState(1);
   const selected = useMemo(() => tiers.find(t => t.tier === selectedTier) ?? tiers[0], [tiers, selectedTier]);
@@ -152,8 +153,8 @@ function VeeRoyalSvipScreen({
         <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scroller}>
           <View style={styles.hero}>
             <View style={styles.auraOuter}><View style={[styles.auraInner, { borderColor: accent + '88' }]} /></View>
-            {emblem ? <Image source={{ uri: emblem }} style={styles.emblem} contentFit="contain" cachePolicy="memory-disk" transition={0}/> :
-              frame ? <Image source={{ uri: frame }} style={styles.emblem} contentFit="contain" cachePolicy="memory-disk" transition={0}/> :
+            {emblem ? <Image source={typeof emblem === 'number' ? emblem : { uri: emblem }} style={styles.emblem} contentFit="contain" cachePolicy="memory-disk" transition={0}/> :
+              frame ? <Image source={typeof frame === 'number' ? frame : { uri: frame }} style={styles.emblem} contentFit="contain" cachePolicy="memory-disk" transition={0}/> :
               <View style={styles.emblemFallback}><Text style={styles.artPending}>ART PLACEHOLDER</Text></View>}
             <Text style={styles.tierTitle}>{selected.name}</Text>
             {isActive && activeTier === tier && validUntilLabel ?
@@ -162,9 +163,9 @@ function VeeRoyalSvipScreen({
           </View>
           {artReady && (frame || badge || nameplate) ? (
             <View style={styles.visuals}>
-              {badge ? <View style={styles.visualCell}><Image source={{ uri: badge }} style={styles.visualImage} contentFit="contain" cachePolicy="memory-disk" transition={0}/><Text style={styles.visualLabel}>Badge</Text></View> : null}
-              {frame ? <View style={styles.visualCell}><Image source={{ uri: frame }} style={styles.visualImage} contentFit="contain" cachePolicy="memory-disk" transition={0}/><Text style={styles.visualLabel}>Dragon Frame Art</Text></View> : null}
-              {nameplate ? <View style={styles.visualCell}><Image source={{ uri: nameplate }} style={styles.visualImage} contentFit="contain" cachePolicy="memory-disk" transition={0}/><Text style={styles.visualLabel}>Nameplate</Text></View> : null}
+              {badge ? <View style={styles.visualCell}><Image source={typeof badge === 'number' ? badge : { uri: badge }} style={styles.visualImage} contentFit="contain" cachePolicy="memory-disk" transition={0}/><Text style={styles.visualLabel}>Badge</Text></View> : null}
+              {frame ? <View style={styles.visualCell}><Image source={typeof frame === 'number' ? frame : { uri: frame }} style={styles.visualImage} contentFit="contain" cachePolicy="memory-disk" transition={0}/><Text style={styles.visualLabel}>Dragon Frame Art</Text></View> : null}
+              {nameplate ? <View style={styles.visualCell}><Image source={typeof nameplate === 'number' ? nameplate : { uri: nameplate }} style={styles.visualImage} contentFit="contain" cachePolicy="memory-disk" transition={0}/><Text style={styles.visualLabel}>Nameplate</Text></View> : null}
             </View>
           ) : null}
           <View style={styles.sectionHead}><View style={styles.headLine}/><Text style={styles.sectionTitle}>Privileges</Text><View style={styles.headLine}/></View>
@@ -174,21 +175,21 @@ function VeeRoyalSvipScreen({
             ))}
           </View>
           {/* No preview action without a host-supplied approved one-shot effect. */}
-          {onPreviewEntryEffect && tier >= 2 ? (
+          {!previewOnly && onPreviewEntryEffect && tier >= 2 ? (
             <Pressable style={styles.preview} accessibilityRole="button" onPress={() => onPreviewEntryEffect(tier)}>
               <Text style={styles.previewText}>Preview Entry Effect</Text><Icon kind="arrow" size={15}/>
             </Pressable>
           ) : null}
           <View style={styles.footer}>
             <View style={styles.priceRow}><Icon kind="diamond" size={22}/><Text style={styles.priceText}>{numeral(selected.priceDiamonds)}</Text><Text style={styles.duration}> / {selected.durationDays} DAYS</Text></View>
-            {isActive ? <View style={styles.stateBox}><Text style={styles.stateText}>You are SVIP {activeTier}</Text></View> :
+            {previewOnly ? <View style={styles.stateBox}><Text style={styles.stateText}>VISUAL PREVIEW ONLY — NO LIVE ACTIONS</Text></View> : isActive ? <View style={styles.stateBox}><Text style={styles.stateText}>You are SVIP {activeTier}</Text></View> :
               <Pressable disabled={isWaitlisted || isJoining} accessibilityRole="button" onPress={onJoinWaitlist}
                 style={[styles.join, (isWaitlisted || isJoining) && styles.joinDisabled]}>
                 <LinearGradient colors={['#F7D98F','#E8B84B','#C99134']} style={styles.joinInner}>
                   <Text style={styles.joinText}>{isJoining ? 'Joining…' : isWaitlisted ? 'You are on the waitlist' : 'Join SVIP Waitlist'}</Text>
                 </LinearGradient>
               </Pressable>}
-            {!isActive && <Text style={styles.purchaseNote}>Diamond purchase is not available yet.</Text>}
+            {!previewOnly && !isActive && <Text style={styles.purchaseNote}>Diamond purchase is not available yet.</Text>}
           </View>
         </ScrollView>
       </LinearGradient>
