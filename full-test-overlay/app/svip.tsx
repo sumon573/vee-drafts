@@ -44,6 +44,7 @@ export default function SvipRoute() {
       }}
       currentMembership={active && svip ? { tier: svip.tier, expiry: svip.expiry } : null}
       isOnWaitlist={onWaitlist}
+      onRecharge={() => router.push('/profile/topup' as never)}
       prices={Object.fromEntries(getSvipTiers().map((t) => [t.tier, t.priceDiamonds]))}
     />
   );
