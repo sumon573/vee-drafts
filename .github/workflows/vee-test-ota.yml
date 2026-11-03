@@ -1,0 +1,99 @@
+# Full Vee Test OTA — manual-only (2026-11-03).
+# Publishes a JS-only update to the TEST channel (vee-test) of the SANDBOX
+# Expo project only. Production is unreachable from this workflow: the
+# prepared tree's eas.json contains ONLY the vee-test profile, the project
+# ID is the sandbox project, and the branch is vee-test. If a change needs
+# native code, do NOT force it through OTA — rebuild the Test APK instead.
+name: Vee Test OTA
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type UPDATE_VEE_TEST to confirm'
+        required: true
+        type: string
+      message:
+        description: 'Update message (visible in EAS)'
+        required: true
+        type: string
+      source_ref:
+        description: 'Shipping branch or SHA to build the update from (read-only)'
+        required: false
+        default: 'working-2026-10-13-clean'
+        type: string
+      source_sha:
+        description: 'Optional exact source SHA to assert (empty = branch tip, HEAD is logged)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  publish-test-ota:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Confirm dispatch
+        run: |
+          if [ "${{ inputs.confirm }}" != "UPDATE_VEE_TEST" ]; then
+            echo "confirm must be UPDATE_VEE_TEST"; exit 1
+          fi
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}" ] || [ -z "${{ secrets.VEE_SOURCE_READ_TOKEN }}" ]; then
+            echo "missing required secret"; exit 1
+          fi
+
+      - name: Checkout vee-drafts (prepare script + workflows)
+        uses: actions/checkout@v4
+        with:
+          path: draft
+
+      - name: Checkout shipping tree (READ-ONLY)
+        uses: actions/checkout@v4
+        with:
+          repository: sumon573/Updated-vee-code
+          ref: ${{ inputs.source_ref }}
+          token: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+          path: source
+
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+
+      - name: Prepare full test app (sanitize disposable clone)
+        env:
+          SOURCE_DIR: ${{ github.workspace }}/source
+          DRAFT_DIR: ${{ github.workspace }}/draft
+          VEE_TEST_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
+          VEE_TEST_API_BASE: 'https://vee-test.invalid'
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: node draft/tools/prepare-full-test-app.cjs
+
+      - name: Install app dependencies
+        working-directory: source/artifacts/vee
+        run: pnpm install --no-frozen-lockfile
+
+      - name: TypeScript gate (zero errors in test-touched files)
+        working-directory: source/artifacts/vee
+        run: |
+          pnpm exec tsc --noEmit -p tsconfig.test.json 2>&1 | tee tsc.log || true
+          echo "total error lines: $(grep -c 'error TS' tsc.log || true)"
+          if grep -q "src/config/firebase.ts\|src/utils/platform.ts\|src/services/cloudinaryService.ts\|src/config/onesignal.ts" tsc.log; then
+            echo "TSC ERRORS IN TEST-TOUCHED FILES:"; grep "src/config/firebase.ts\|src/utils/platform.ts\|src/services/cloudinaryService.ts\|src/config/onesignal.ts" tsc.log; exit 1
+          fi
+          echo "TSC GATE PASS"
+
+      - name: Configure Expo EAS (pinned CLI)
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 25.3.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Publish TEST OTA (branch vee-test, sandbox project only)
+        working-directory: source/artifacts/vee
+        run: eas update --branch vee-test --message "${{ inputs.message }}" --non-interactive
