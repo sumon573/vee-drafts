@@ -204,6 +204,34 @@ if (overlayDir && fs.existsSync(overlayDir)) {
   log('no draft overlay (full-test-overlay/ absent) — pure shipping tree + test config');
 }
 
+// ---- Devserver-only bundle assets (2026-11-03, run #2 Bundle JavaScript fix) ----
+// The shipping repo lacks 12 image files the app statically requires
+// (RoomGamesModal: games-delicious/fisher; deliciousService: delicious/*.png)
+// — they exist ONLY in the devserver tree (C:\vee-devsrc), so Metro bundling
+// in CI fails with "Unable to resolve module". Production OTAs bundle from
+// devsrc, so production never hit this; a repo-based production build WOULD.
+// Test-tree fix WITHOUT touching the shipping branch: the 12 files live in
+// vee-drafts under test-assets/images/ (SHA-verified identical to devsrc)
+// and are copied into the prepared tree here. If any is missing, FAIL —
+/// a partial copy would only move the Metro failure to the next file.
+if (!DRAFT_DIR) fail('DRAFT_DIR required: test-assets/images/ supplies 12 devserver-only bundle assets');
+{
+  const assetSrc = path.join(DRAFT_DIR, 'test-assets', 'images');
+  const need = ['games-delicious.png', 'games-fisher.png',
+    'delicious/cabbage.png', 'delicious/carrot.png', 'delicious/corn.png',
+    'delicious/ham.png', 'delicious/hotdog.png', 'delicious/pizza.png',
+    'delicious/salad.png', 'delicious/skewers.png', 'delicious/steak.png',
+    'delicious/tomato.png'];
+  for (const rel of need) {
+    const src = path.join(assetSrc, rel);
+    const dest = path.join(APP_DIR, 'assets', 'images', rel);
+    if (!fs.existsSync(src)) fail('missing test asset: test-assets/images/' + rel);
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+  log('test assets copied: 12 devserver-only images -> assets/images/');
+}
+
 // ---- pnpm hoist for local config plugins (2026-11-03, CI-proven) ----
 // The app's local ./plugins/*.js config plugins require('@expo/config-plugins'),
 // which is NOT a direct dependency, so pnpm's strict isolation leaves it out
