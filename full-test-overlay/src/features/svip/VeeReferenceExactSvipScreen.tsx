@@ -63,6 +63,8 @@ export interface ReferenceSvipProps {
   onOpenSeniorRights?: () => void;
   /** Use Vee's real existing joinSvipWaitlist, NEVER a pretend purchase. */
   onJoinWaitlist: () => Promise<void>;
+  /** Opens the real diamond top-up screen; omitted = no recharge button. */
+  onRecharge?: () => void;
   currentMembership: ReferenceSvipMembership | null;
   isOnWaitlist: boolean;
   /** Source-of-truth server prices; fallback is the owner's exact 10/20/30/40/60k. */
@@ -299,6 +301,16 @@ export default function VeeReferenceExactSvipScreen(props: ReferenceSvipProps) {
               {joining ? <ActivityIndicator color="#201026" /> :
                 <Text style={styles.dialogButtonText}>{props.isOnWaitlist ? 'ON WAITLIST' : 'JOIN WAITLIST'}</Text>}
             </Pressable>
+            {props.onRecharge ? (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Recharge diamonds"
+                style={styles.rechargeButton}
+                onPress={props.onRecharge}
+              >
+                <Text style={styles.rechargeButtonText}>RECHARGE DIAMONDS</Text>
+              </Pressable>
+            ) : null}
             <Pressable accessibilityRole="button" style={styles.closeLink} onPress={() => setStoreOpen(false)}>
               <Text style={styles.closeLinkText}>Close</Text>
             </Pressable>
@@ -335,6 +347,10 @@ const styles = StyleSheet.create({
   dialogButton: {minHeight: 52, backgroundColor: '#E6BF89', borderRadius: 14,
     justifyContent: 'center', alignItems: 'center', marginTop: 23},
   dialogButtonText: {color: '#2F1935', fontSize: 14, fontWeight: '800', letterSpacing: 1},
+  rechargeButton: {minHeight: 52, backgroundColor: 'transparent', borderRadius: 14,
+    borderWidth: 1, borderColor: '#E6BF89',
+    justifyContent: 'center', alignItems: 'center', marginTop: 12},
+  rechargeButtonText: {color: '#E6BF89', fontSize: 14, fontWeight: '800', letterSpacing: 1},
   disabled: {opacity: 0.65},
   closeLink: {minHeight: 45, justifyContent: 'center', alignItems: 'center', marginTop: 6},
   closeLinkText: {color: '#BBA7CC', fontSize: 14},
