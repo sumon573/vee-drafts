@@ -37,8 +37,8 @@ jobs:
           if [ "${{ inputs.confirm }}" != "BUILD_VEE_TEST" ]; then
             echo "confirm must be BUILD_VEE_TEST"; exit 1
           fi
-          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}" ] || [ -z "${{ secrets.VEE_SOURCE_READ_TOKEN }}" ]; then
-            echo "missing required secret (EXPO_TOKEN / VEE_SANDBOX_EAS_PROJECT_ID / VEE_SOURCE_READ_TOKEN)"; exit 1
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}" ] || [ -z "${{ secrets.VEE_SOURCE_READ_TOKEN }}" ] || [ -z "${{ secrets.VEE_TEST_FIREBASE_CONFIG }}" ]; then
+            echo "missing required secret (EXPO_TOKEN / VEE_SANDBOX_EAS_PROJECT_ID / VEE_SOURCE_READ_TOKEN / VEE_TEST_FIREBASE_CONFIG)"; exit 1
           fi
 
       - name: Checkout vee-drafts (prepare script + workflows)
@@ -70,6 +70,7 @@ jobs:
           DRAFT_DIR: ${{ github.workspace }}/draft
           VEE_TEST_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
           VEE_TEST_API_BASE: 'https://vee-club.duckdns.org/test-api'
+          VEE_TEST_FIREBASE_CONFIG: ${{ secrets.VEE_TEST_FIREBASE_CONFIG }}
           EXPECTED_SHA: ${{ inputs.source_sha }}
         run: node draft/tools/prepare-full-test-app.cjs
 
@@ -103,7 +104,9 @@ jobs:
           BUILD_ID=$(npx --yes eas-cli@25.3.0 build:list --limit 1 --json --non-interactive | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s)[0].id)}catch(e){console.log('')}})")
           echo "latest build id: $BUILD_ID"
           if [ -n "$BUILD_ID" ]; then
-            npx --yes eas-cli@25.3.0 build:download --id "$BUILD_ID" --output vee-test.apk --non-interactive || echo "download failed (use EAS build page)"
+            npx --yes eas-cli@25.3.0 build:download --id "$BUILD_ID" --non-interactive || echo "download failed (use EAS build page)"
+            DL=$(ls -t *.apk 2>/dev/null | head -1)
+            if [ -n "$DL" ] && [ "$DL" != "vee-test.apk" ]; then mv "$DL" vee-test.apk; fi
           fi
           ls -la vee-test.apk 2>/dev/null || echo "no local APK file"
 

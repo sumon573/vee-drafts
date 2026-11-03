@@ -38,7 +38,7 @@ jobs:
           if [ "${{ inputs.confirm }}" != "UPDATE_VEE_TEST" ]; then
             echo "confirm must be UPDATE_VEE_TEST"; exit 1
           fi
-          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}" ] || [ -z "${{ secrets.VEE_SOURCE_READ_TOKEN }}" ]; then
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}" ] || [ -z "${{ secrets.VEE_SOURCE_READ_TOKEN }}" ] || [ -z "${{ secrets.VEE_TEST_FIREBASE_CONFIG }}" ]; then
             echo "missing required secret"; exit 1
           fi
 
@@ -71,6 +71,7 @@ jobs:
           DRAFT_DIR: ${{ github.workspace }}/draft
           VEE_TEST_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
           VEE_TEST_API_BASE: 'https://vee-club.duckdns.org/test-api'
+          VEE_TEST_FIREBASE_CONFIG: ${{ secrets.VEE_TEST_FIREBASE_CONFIG }}
           EXPECTED_SHA: ${{ inputs.source_sha }}
         run: node draft/tools/prepare-full-test-app.cjs
 
