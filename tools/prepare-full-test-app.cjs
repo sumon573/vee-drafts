@@ -242,8 +242,13 @@ if (!DRAFT_DIR) fail('DRAFT_DIR required: test-assets/images/ supplies 12 devser
 // reproduces production's layout without adding a dependency or changing
 // versions. The .npmrc must exist BEFORE `pnpm install` runs (pnpm will not
 // re-link on a no-op install).
-fs.writeFileSync(path.join(APP_DIR, '.npmrc'), 'public-hoist-pattern[]=@expo/config-plugins\n');
-log('.npmrc -> hoist @expo/config-plugins (local config plugins load under pnpm)');
+// 2026-11-03 OTA #2 lesson: babel-preset-expo is the SAME class of bug —
+// babel.config.js requires it as a preset but it is NOT a direct dependency,
+// so under pnpm strict isolation Babel's project-root resolution fails in CI
+// ("Cannot find module 'babel-preset-expo'", iOS bundling failed at 135ms)
+// even though a local pnpm install happened to resolve it. Hoist it too.
+fs.writeFileSync(path.join(APP_DIR, '.npmrc'), 'public-hoist-pattern[]=@expo/config-plugins\npublic-hoist-pattern[]=babel-preset-expo\n');
+log('.npmrc -> hoist @expo/config-plugins + babel-preset-expo (pnpm strict isolation fixes)');
 
 // ---- Test tsconfig gate file (workflow runs tsc against it) ----
 fs.writeFileSync(path.join(APP_DIR, 'tsconfig.test.json'),
