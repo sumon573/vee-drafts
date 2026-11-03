@@ -1,0 +1,115 @@
+# Full Vee Test APK — manual-only build (2026-11-03).
+# Builds the COMPLETE Vee app (all routes/services/plugins/permissions) as the
+# side-by-side test app. NEVER touches production: separate Expo project
+# (sandbox project via VEE_SANDBOX_EAS_PROJECT_ID), channel vee-test, runtime
+# vee-test-v1, package com.vee.app.sviptest. Source = shipping branch cloned
+# READ-ONLY; the prepare script sanitizes a disposable clone only.
+# Production OTA is impossible from this workflow: eas.json in the prepared
+# tree contains ONLY the vee-test profile, and the project ID is the sandbox
+# project. No production profile, channel, or project ID appears anywhere here.
+name: Vee Test APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type BUILD_VEE_TEST to confirm'
+        required: true
+        type: string
+      source_ref:
+        description: 'Shipping branch or SHA to build from (read-only)'
+        required: false
+        default: 'working-2026-10-13-clean'
+        type: string
+      source_sha:
+        description: 'Optional exact source SHA to assert (empty = branch tip, HEAD is logged)'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  build-test-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Confirm dispatch
+        run: |
+          if [ "${{ inputs.confirm }}" != "BUILD_VEE_TEST" ]; then
+            echo "confirm must be BUILD_VEE_TEST"; exit 1
+          fi
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}" ] || [ -z "${{ secrets.VEE_SOURCE_READ_TOKEN }}" ]; then
+            echo "missing required secret (EXPO_TOKEN / VEE_SANDBOX_EAS_PROJECT_ID / VEE_SOURCE_READ_TOKEN)"; exit 1
+          fi
+
+      - name: Checkout vee-drafts (prepare script + workflows)
+        uses: actions/checkout@v4
+        with:
+          path: draft
+
+      - name: Checkout shipping tree (READ-ONLY)
+        uses: actions/checkout@v4
+        with:
+          repository: sumon573/Updated-vee-code
+          ref: ${{ inputs.source_ref }}
+          token: ${{ secrets.VEE_SOURCE_READ_TOKEN }}
+          path: source
+
+      - name: Setup Node 22 (eas-cli 25.3.0 needs Node >= 22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.34.9
+
+      - name: Prepare full test app (sanitize disposable clone)
+        env:
+          SOURCE_DIR: ${{ github.workspace }}/source
+          DRAFT_DIR: ${{ github.workspace }}/draft
+          VEE_TEST_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
+          VEE_TEST_API_BASE: 'https://vee-test.invalid'
+          EXPECTED_SHA: ${{ inputs.source_sha }}
+        run: node draft/tools/prepare-full-test-app.cjs
+
+      - name: Install app dependencies
+        working-directory: source/artifacts/vee
+        run: pnpm install --no-frozen-lockfile
+
+      - name: TypeScript gate (zero errors in test-touched files; baseline tolerated)
+        working-directory: source/artifacts/vee
+        run: |
+          pnpm exec tsc --noEmit -p tsconfig.test.json 2>&1 | tee tsc.log || true
+          echo "total error lines: $(grep -c 'error TS' tsc.log || true)"
+          if grep -q "src/config/firebase.ts\|src/utils/platform.ts\|src/services/cloudinaryService.ts\|src/config/onesignal.ts" tsc.log; then
+            echo "TSC ERRORS IN TEST-TOUCHED FILES:"; grep "src/config/firebase.ts\|src/utils/platform.ts\|src/services/cloudinaryService.ts\|src/config/onesignal.ts" tsc.log; exit 1
+          fi
+          echo "TSC GATE PASS (no errors in test-touched files)"
+
+      - name: Configure Expo EAS (pinned CLI, production-proven)
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 25.3.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Build Android test APK
+        working-directory: source/artifacts/vee
+        run: eas build --profile vee-test --platform android --non-interactive --wait
+
+      - name: Download APK artifact (best effort; EAS page always has it)
+        working-directory: source/artifacts/vee
+        run: |
+          BUILD_ID=$(npx --yes eas-cli@25.3.0 build:list --limit 1 --json --non-interactive | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s)[0].id)}catch(e){console.log('')}})")
+          echo "latest build id: $BUILD_ID"
+          if [ -n "$BUILD_ID" ]; then
+            npx --yes eas-cli@25.3.0 build:download --id "$BUILD_ID" --output vee-test.apk --non-interactive || echo "download failed (use EAS build page)"
+          fi
+          ls -la vee-test.apk 2>/dev/null || echo "no local APK file"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: hashFiles('source/artifacts/vee/vee-test.apk') != ''
+        with:
+          name: vee-test-apk
+          path: source/artifacts/vee/vee-test.apk
