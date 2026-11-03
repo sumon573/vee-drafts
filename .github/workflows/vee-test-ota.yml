@@ -70,7 +70,7 @@ jobs:
           SOURCE_DIR: ${{ github.workspace }}/source
           DRAFT_DIR: ${{ github.workspace }}/draft
           VEE_TEST_PROJECT_ID: ${{ secrets.VEE_SANDBOX_EAS_PROJECT_ID }}
-          VEE_TEST_API_BASE: 'https://vee-test.invalid'
+          VEE_TEST_API_BASE: 'https://vee-club.duckdns.org/test-api'
           EXPECTED_SHA: ${{ inputs.source_sha }}
         run: node draft/tools/prepare-full-test-app.cjs
 
