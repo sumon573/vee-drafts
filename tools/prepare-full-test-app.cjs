@@ -204,6 +204,19 @@ if (overlayDir && fs.existsSync(overlayDir)) {
   log('no draft overlay (full-test-overlay/ absent) — pure shipping tree + test config');
 }
 
+// ---- pnpm hoist for local config plugins (2026-11-03, CI-proven) ----
+// The app's local ./plugins/*.js config plugins require('@expo/config-plugins'),
+// which is NOT a direct dependency, so pnpm's strict isolation leaves it out
+// of the app root's node_modules and EAS prebuild fails with "Unable to
+// resolve a valid config plugin" for every local plugin (run #1, 2026-11-03).
+// Production (expo.dev, flat npm layout) never hit this because the package
+// is hoisted there. Hoisting ONLY this one package in the TEST tree
+// reproduces production's layout without adding a dependency or changing
+// versions. The .npmrc must exist BEFORE `pnpm install` runs (pnpm will not
+// re-link on a no-op install).
+fs.writeFileSync(path.join(APP_DIR, '.npmrc'), 'public-hoist-pattern[]=@expo/config-plugins\n');
+log('.npmrc -> hoist @expo/config-plugins (local config plugins load under pnpm)');
+
 // ---- Test tsconfig gate file (workflow runs tsc against it) ----
 fs.writeFileSync(path.join(APP_DIR, 'tsconfig.test.json'),
   JSON.stringify({ extends: './tsconfig.json', compilerOptions: { types: [] } }, null, 2) + '\n');
