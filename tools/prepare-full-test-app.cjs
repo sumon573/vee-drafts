@@ -266,7 +266,12 @@ const checks = [
   ['app.json no prod expo id', !fs.readFileSync(appJsonPath, 'utf8').includes('76af2941')],
   ['eas.json no prod expo id', !fs.readFileSync(easJsonPath, 'utf8').includes('76af2941')],
   ['eas profiles only vee-test', JSON.stringify(Object.keys(JSON.parse(fs.readFileSync(easJsonPath, 'utf8')).build)) === JSON.stringify(['vee-test'])],
-  ['platform no duckdns', !fs.readFileSync(platformPath, 'utf8').includes('vee-club.duckdns.org')],
+  // 2026-11-03 OTA #1 lesson: the staging API base IS a duckdns URL
+  // (https://vee-club.duckdns.org/test-api), so a blanket "no duckdns"
+  // check contradicts the platform rewrite (line 161 sets the fallback
+  // TO the staging URL). The guard must allow the staging URL itself
+  // and forbid only OTHER duckdns references (i.e. the production base).
+  ['platform no prod duckdns', !fs.readFileSync(platformPath, 'utf8').split(API_BASE).join('').includes('vee-club.duckdns.org')],
 ];
 for (const [label, ok] of checks) {
   if (!ok) fail('LEAK GUARD FAILED: ' + label);
