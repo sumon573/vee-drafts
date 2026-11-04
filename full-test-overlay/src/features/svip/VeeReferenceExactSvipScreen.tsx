@@ -29,6 +29,9 @@ import {
 } from 'react-native';
 import {Image} from 'expo-image';
 import {SafeAreaView} from 'react-native-safe-area-context';
+// TEST ONLY (2026-11-04, boss order): the SVIP page's frame reward shows
+// the animated dragon frame. Imported from the already-uploaded package.
+import VeeSvip1DragonFrame from './VeeSvip1DragonFrame';
 
 const DESIGN_W = 736;
 const DESIGN_H = 1472;
@@ -201,6 +204,25 @@ export default function VeeReferenceExactSvipScreen(props: ReferenceSvipProps) {
             accessibilityLabel={`SVIP ${tier} artwork from the owner's exact reference screenshot`}
           />
 
+          {/* TEST ONLY (2026-11-04, boss order): SVIP1's frame reward on the
+              SVIP page shows the animated dragon frame — the user-facing
+              reward users claim from here. NOT a profile avatar frame.
+              Tier 1 only; other tiers keep their baked tile art. The dark
+              backing hides the baked wreath so the tile reads as one clean
+              dragon reward; tile taps still pass through to the detail modal. */}
+          {tier === 1 ? (
+            <View
+              pointerEvents="none"
+              style={[
+                area({x: 259, y: 1041, w: 218, h: 178}, scale),
+                styles.dragonTileBack,
+                {borderRadius: 14 * scale},
+              ]}
+            >
+              <VeeSvip1DragonFrame size={178 * scale} enabled visible screenFocused allowAnimation />
+            </View>
+          ) : null}
+
           {/* Original reference's back and store symbols: real touch callbacks. */}
           <OverlayButton label="Back" scale={scale} box={{x: 0, y: 9, w: 82, h: 87}} onPress={props.onBack} />
           <OverlayButton label="SVIP store" scale={scale} box={{x: 643, y: 9, w: 93, h: 95}}
@@ -326,6 +348,9 @@ const styles = StyleSheet.create({
   outer: {alignItems: 'center', paddingBottom: 3},
   artboard: {position: 'relative', overflow: 'hidden', backgroundColor: BACKGROUND},
   touchArea: {position: 'absolute', backgroundColor: 'transparent'},
+  // TEST ONLY: backing for the SVIP1 dragon frame reward tile (tile color
+  // sampled from the tier-1 reference art). Covers the baked wreath.
+  dragonTileBack: {position: 'absolute', backgroundColor: '#302523', alignItems: 'center', justifyContent: 'center'},
   // Mask rectangles only cover stale sample text from the screenshots.
   statMask: {position: 'absolute', backgroundColor: '#080604'},
   centeredStat: {position: 'absolute', alignItems: 'center', justifyContent: 'center'},
