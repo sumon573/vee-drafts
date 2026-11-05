@@ -329,8 +329,11 @@ function ShieldMark({ color }: { color: string }) {
 }
 
 export function ChatLevelBadge({ uid, enabled }: { uid?: string | null; enabled: boolean }) {
-  const rankIndex = useNobleRank(uid);
-  const svipTier = useActiveSvipTier(uid);
+  // Flag off = ZERO new subscriptions: pass null uids so both hooks
+  // no-op (their null path subscribes to nothing). Hook order stays
+  // stable because both hooks are always called.
+  const rankIndex = useNobleRank(enabled ? uid : null);
+  const svipTier = useActiveSvipTier(enabled ? uid : null);
   if (!enabled) return null;
 
   if (svipTier !== null) {
