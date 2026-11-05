@@ -14,12 +14,12 @@ import { VoiceRoom } from '../types/room';
 // hairline border, so the My Rooms row looks clean and light.
 const SIZE = 68;
 
-type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number; heatEnabled?: boolean };
+type Props = { room: VoiceRoom; onPress?: () => void; liveCount?: number; heatEnabled?: boolean; waveform?: boolean };
 
 // Perf (2026-10-22 audit): memoized — VoiceRoomHome passes stable room
 // objects + stable press handlers, so cards re-render only when their own
 // room's visible data or live count changes.
-export default memo(function RoomCard({ room, onPress, liveCount, heatEnabled }: Props) {
+export default memo(function RoomCard({ room, onPress, liveCount, heatEnabled, waveform }: Props) {
   // 2026-10-26 (weak network): a failed cover load used to leave blank
   // space until remount. Fall back to the mic placeholder, and retry on
   // the next feed refresh (URL change resets the failure).
@@ -79,7 +79,10 @@ export default memo(function RoomCard({ room, onPress, liveCount, heatEnabled }:
             </View>
           )}
 
-          {/* Member count — bottom right */}
+          {/* Member count — bottom right. Batch 2.3 (2026-11-05): a small
+              waveform icon next to the existing count signals "live audio".
+              Chip position, padding and size are unchanged; the icon only
+              renders when the server flag enables it (waveform prop). */}
           <View style={{
             position: 'absolute', right: 6, bottom: 6,
             flexDirection: 'row', alignItems: 'center',
@@ -87,6 +90,9 @@ export default memo(function RoomCard({ room, onPress, liveCount, heatEnabled }:
             borderRadius: 999, paddingHorizontal: 5, paddingVertical: 2,
           }}>
             <Feather name="volume-2" size={8} color="#fff" />
+            {waveform ? (
+              <Feather name="bar-chart-2" size={8} color="#fff" style={{ marginLeft: 3 }} />
+            ) : null}
             <Text style={{ color: '#fff', fontSize: 9, fontWeight: '900', marginLeft: 3 }}>
               {liveCount ?? room.liveCount ?? room.memberCount}
             </Text>

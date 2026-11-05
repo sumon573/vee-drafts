@@ -25,6 +25,16 @@ import { getErrorCause } from '@/src/utils/errorDisplay';
 import ScalePress from '@/components/ScalePress';
 import RoomCard from '../components/RoomCard';
 import RoomListItem from '../components/RoomListItem';
+// Batch 2 (2026-11-05): Home banner carousel + game promo card, all
+// server-driven via `home_promo` (flag off = today's behaviour).
+import HomeBannerCarousel from '@/src/features/home/components/HomeBannerCarousel';
+import GamePromoCard from '@/src/features/home/components/GamePromoCard';
+import { DeliciousGameSheet } from '../components/games/DeliciousGameSheet';
+import {
+  subscribeHomePromo,
+  HOME_PROMO_OFF,
+  type HomePromoConfig,
+  type BannerAction } from '@/src/features/home/services/homePromoService';
 import { ActiveFollowingsBar, ActiveFollowingsSheet, loadActiveFollowings, type ActiveFollowing } from '../components/ActiveFollowingsSheet';
 import RoomCreationModal from './RoomCreationModal';
 import { LeaderboardModal } from './LeaderboardModal';
@@ -241,6 +251,22 @@ export default function VoiceRoomHome({
   // 2026-10-30 (boss: voice page full display, no shell bar here):
   // the page's own scroll padding reserves only the OS gesture zone.
   const insets = useSafeAreaInsets();
+
+  // Batch 2 (2026-11-05): server-driven Home promo config (banner,
+  // game promo, topic chips, listener waveform). One live RTDB
+  // subscription; missing node = HOME_PROMO_OFF (today's behaviour).
+  const [homePromo, setHomePromo] = useState<HomePromoConfig>(HOME_PROMO_OFF);
+  useEffect(() => subscribeHomePromo(setHomePromo), []);
+  const showBanner = homePromo.bannerEnabled && homePromo.slides.length > 0;
+  const showGamePromo = homePromo.gamePromoEnabled && homePromo.featuredGame === 'delicious';
+  const waveformOn = homePromo.listenerWaveformEnabled;
+  const topicChipsOn = homePromo.topicChipsEnabled;
+  // Delicious sheet opened from the banner CTA or the game promo card.
+  const [deliciousOpen, setDeliciousOpen] = useState(false);
+  const handleBannerAction = useCallback((action: BannerAction) => {
+    if (action === 'svip') router.push('/svip');
+    else if (action === 'delicious') setDeliciousOpen(true);
+  }, []);
 
   // My Rooms — owned by me (seeded from cache: tab switches render
   // instantly, no loader flash — live subscriptions refresh underneath).
@@ -876,15 +902,22 @@ export default function VoiceRoomHome({
   }, [user?.uid, pass2HomeActive]);
 
   // FlatList model (chat-list pattern): data items keep sticky indices
-  // stable by construction — myrooms = 0, recheader = 1 (sticky), rooms = 2+.
+  // stable by construction — banner?, gamepromo?, myrooms?, recheader
+  // (sticky), rooms = 2+. The sticky index is computed from the same
+  // flags that build the list (Batch 2 inserts shift it).
   type HomeItem = {
     key: string;
-    type: 'myrooms' | 'recheader' | 'room' | 'nearbyLoading' | 'nearbyDenied' | 'empty';
+    type: 'banner' | 'gamepromo' | 'myrooms' | 'recheader' | 'room' | 'nearbyLoading' | 'nearbyDenied' | 'empty';
     room?: RoomInfo;
     distanceKm?: number;
   };
   const homeItems = useMemo<HomeItem[]>(() => {
     const items: HomeItem[] = [];
+    // Batch 2.1 + 2.4: banner carousel + game promo card at the very top
+    // of the voice room list (above My Rooms / Recommended). Both are
+    // server-gated; absent config = absent items (today's list).
+    if (showBanner) items.push({ key: 'banner', type: 'banner' });
+    if (showGamePromo) items.push({ key: 'gamepromo', type: 'gamepromo' });
     if (pageTab === 'room') items.push({ key: 'myrooms', type: 'myrooms' });
     items.push({ key: 'recheader', type: 'recheader' });
     if (activeTab === 'nearby' && locationLoading) {
@@ -902,8 +935,9 @@ export default function VoiceRoomHome({
       items.push({ key: 'empty', type: 'empty' });
     }
     return items;
-  }, [pageTab, activeTab, locationLoading, locationDenied, recommended, recLoading, userLocation]);
-  const homeSticky = pageTab === 'room' ? [1] : [0];
+  }, [pageTab, activeTab, locationLoading, locationDenied, recommended, recLoading, userLocation, showBanner, showGamePromo]);
+  // Batch 2: recheader sits after banner + gamepromo + myrooms (when present).
+  const homeSticky = [(showBanner ? 1 : 0) + (showGamePromo ? 1 : 0) + (pageTab === 'room' ? 1 : 0)];
 
   return (
     <View style={{ flex: 1 }}>
@@ -969,6 +1003,24 @@ export default function VoiceRoomHome({
         contentContainerStyle={{ paddingBottom: insets.bottom + 16 + (activeFollowings.length > 0 ? 68 : 0) }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={handleRefresh} />}
         renderItem={({ item }) => {
+          if (item.type === 'banner') {
+            return (
+              <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+                <HomeBannerCarousel
+                  slides={homePromo.slides}
+                  autoScrollMs={homePromo.bannerAutoScrollMs}
+                  onAction={handleBannerAction}
+                />
+              </View>
+            );
+          }
+          if (item.type === 'gamepromo') {
+            return (
+              <View style={{ paddingHorizontal: 16, paddingTop: 12 }}>
+                <GamePromoCard onPlay={() => setDeliciousOpen(true)} />
+              </View>
+            );
+          }
           if (item.type === 'myrooms') {
             return (
               <View>
@@ -985,7 +1037,7 @@ export default function VoiceRoomHome({
                   <CreateRoomTile onPress={() => setCreateModalOpen(true)} />
                   {myRooms.map((r) => (
                     <View key={r.id} style={{ marginRight: 10 }}>
-                      <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} heatEnabled={heatEnabled} />
+                      <RoomCard room={voiceRoomOf(r)} liveCount={liveAudienceOf(r)} onPress={pressFor(r.id)} heatEnabled={heatEnabled} waveform={waveformOn} />
                     </View>
                   ))}
                 </GHScrollView>
@@ -1039,6 +1091,7 @@ export default function VoiceRoomHome({
                 onPress={pressFor(item.room.id)}
                 hideLiveBadge
                 heatEnabled={heatEnabled}
+                showTopicChip={topicChipsOn}
               />
               </View>
             );
@@ -1117,6 +1170,15 @@ export default function VoiceRoomHome({
             }
           }
         }}
+      />
+
+      {/* Batch 2.4: global Delicious game sheet, opened from the banner
+          CTA or the game promo card. No room needed (Delicious is a
+          global game); all its subscriptions are visible-gated. */}
+      <DeliciousGameSheet
+        visible={deliciousOpen}
+        myUid={user?.uid ?? ''}
+        onClose={() => setDeliciousOpen(false)}
       />
 
       {/* Leaderboard Modal */}

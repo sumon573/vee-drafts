@@ -33,7 +33,30 @@ const C = {
 const MAX_DP = 6;
 const DP = 24;
 
-type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number; hideLiveBadge?: boolean; heatEnabled?: boolean };
+type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number; hideLiveBadge?: boolean; heatEnabled?: boolean; showTopicChip?: boolean };
+
+/**
+ * Batch 2.2 (2026-11-05): topic as a soft chip — light bg + dark text,
+ * 24px tall, 12px/600, pill radius. The topic is the room's OWN topic
+ * from the server (VoiceRoom.topic, set by the host at creation) — never
+ * invented. Colour is decoration only: the meaning is the written topic
+ * name, and every tint pairs with a dark AA text colour. The tint is
+ * picked deterministically from the topic text so a room keeps its chip.
+ */
+const TOPIC_CHIP_TINTS: { bg: string; text: string }[] = [
+  { bg: '#FDF3D7', text: '#7A5B00' }, // Vee gold tint
+  { bg: '#FDE8EC', text: '#7A1F2E' }, // rose
+  { bg: '#E3F0FB', text: '#17456B' }, // sky
+  { bg: '#E2F5E9', text: '#14532D' }, // mint
+  { bg: '#EFE7FD', text: '#4C1D95' }, // violet
+  { bg: '#FDF0D5', text: '#7C4A03' }, // amber
+];
+
+function topicChipTint(topic: string): { bg: string; text: string } {
+  let h = 0;
+  for (let i = 0; i < topic.length; i++) h = (h * 31 + topic.charCodeAt(i)) >>> 0;
+  return TOPIC_CHIP_TINTS[h % TOPIC_CHIP_TINTS.length];
+}
 
 /** Format distance: < 1km shows meters, else km with 1 decimal. */
 function formatDistance(km: number): string {
@@ -45,7 +68,7 @@ function formatDistance(km: number): string {
 // Fix #30 effect (boss 2026-10-30 01:16): LIVE badge removed —
 // hideLiveBadge stays in Props so existing call sites type-check,
 // but it is now a no-op (badge JSX deleted below).
-export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount, heatEnabled }: Props) {
+export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount, heatEnabled, showTopicChip }: Props) {
   // 2026-10-26 (weak network): same failed-cover fallback as RoomCard.
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
@@ -135,12 +158,26 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
               topic, avatars untouched. */}
         </View>
 
-        {/* Topic as plain text (imo): no banner chip, just the line. */}
-        {!!room.topic && (
+        {/* Topic: Batch 2.2 — soft chip when the server flag is on (the
+            room's own topic, never invented; empty topic = no chip).
+            Flag off = today's plain-text line, unchanged. */}
+        {!!room.topic && showTopicChip ? (
+          <View style={{ alignSelf: 'flex-start', maxWidth: '100%', marginTop: 8 }}>
+            <View style={{
+              height: 24, borderRadius: 999,
+              backgroundColor: topicChipTint(room.topic).bg,
+              paddingHorizontal: 10, alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: topicChipTint(room.topic).text, fontSize: 12, fontWeight: '600' }}>
+                {room.topic}
+              </Text>
+            </View>
+          </View>
+        ) : !!room.topic ? (
           <Text numberOfLines={1} ellipsizeMode="tail" style={{ color: C.sub, fontSize: 14, fontWeight: '600', marginTop: 8 }}>
             {room.topic}
           </Text>
-        )}
+        ) : null}
 
         {/* Bottom row: real member DPs (up to 6) + private badge */}
         <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 8 }}>
