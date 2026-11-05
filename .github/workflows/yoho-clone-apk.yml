@@ -1,0 +1,102 @@
+# YoHo Clone dev APK — manual-only build.
+# Builds the YoHo clone vertical slice as a development build (EAS).
+# NEVER touches production: separate Expo project (yoho-clone, created by
+# `eas project init` on first run), staging Firebase + staging API only.
+# The clone code lives in this repo under yoho-clone/ (it is a draft, like
+# the test assets and overlays). The prepare script injects the staging
+# Firebase config from VEE_TEST_FIREBASE_CONFIG (the same secret the Vee
+# test app uses) — the values never touch the repo.
+# A development build is a TEST artifact, not a release.
+name: YoHo Clone APK
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type BUILD_YOHO_CLONE to confirm'
+        required: true
+        type: string
+      source_ref:
+        description: 'Branch or SHA to build from'
+        required: false
+        default: 'main'
+        type: string
+
+jobs:
+  build-clone-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Confirm dispatch
+        run: |
+          if [ "${{ inputs.confirm }}" != "BUILD_YOHO_CLONE" ]; then
+            echo "confirm must be BUILD_YOHO_CLONE"; exit 1
+          fi
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ] || [ -z "${{ secrets.VEE_TEST_FIREBASE_CONFIG }}" ]; then
+            echo "missing required secret (EXPO_TOKEN / VEE_TEST_FIREBASE_CONFIG)"; exit 1
+          fi
+
+      - name: Checkout vee-drafts (clone lives under yoho-clone/)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+
+      - name: Setup Node 22 (eas-cli 25.3.0 needs Node >= 22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Prepare clone (inject staging Firebase config)
+        env:
+          CLONE_DIR: ${{ github.workspace }}/yoho-clone
+          VEE_TEST_FIREBASE_CONFIG: ${{ secrets.VEE_TEST_FIREBASE_CONFIG }}
+          YOHO_CLONE_EAS_PROJECT_ID: ${{ secrets.YOHO_CLONE_EAS_PROJECT_ID }}
+        run: node yoho-clone/tools/prepare-clone.cjs
+
+      - name: Install app dependencies
+        working-directory: yoho-clone
+        run: npm ci
+
+      - name: TypeScript gate (zero errors)
+        working-directory: yoho-clone
+        run: npx tsc --noEmit
+
+      - name: Configure Expo EAS (pinned CLI, production-proven)
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: 25.3.0
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Init/link EAS project (first run creates it)
+        working-directory: yoho-clone
+        run: |
+          if node -e "const a=require('./app.json'); process.exit(a.expo && a.expo.extra && a.expo.extra.eas && a.expo.extra.eas.projectId ? 0 : 1)"; then
+            echo "projectId already set, skipping init"
+          else
+            npx --yes eas-cli@25.3.0 project:init --account jegata5150s-team --non-interactive --json | tee project-init.json
+            echo "project init done"
+          fi
+          node -e "const a=require('./app.json'); console.log('projectId:', (a.expo && a.expo.extra && a.expo.extra.eas && a.expo.extra.eas.projectId) || '(none)')"
+
+      - name: Build Android dev APK
+        working-directory: yoho-clone
+        run: eas build --profile development --platform android --non-interactive --wait
+
+      - name: Download APK artifact (best effort; EAS page always has it)
+        working-directory: yoho-clone
+        run: |
+          BUILD_ID=$(npx --yes eas-cli@25.3.0 build:list --limit 1 --json --non-interactive | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s)[0].id)}catch(e){console.log('')}})")
+          echo "latest build id: $BUILD_ID"
+          if [ -n "$BUILD_ID" ]; then
+            npx --yes eas-cli@25.3.0 build:download --id "$BUILD_ID" --non-interactive || echo "download failed (use EAS build page)"
+            DL=$(ls -t *.apk 2>/dev/null | head -1)
+            if [ -n "$DL" ] && [ "$DL" != "yoho-clone.apk" ]; then mv "$DL" yoho-clone.apk; fi
+          fi
+          ls -la yoho-clone.apk 2>/dev/null || echo "no local APK file"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        if: hashFiles('yoho-clone/yoho-clone.apk') != ''
+        with:
+          name: yoho-clone-apk
+          path: yoho-clone/yoho-clone.apk
