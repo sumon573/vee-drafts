@@ -104,6 +104,19 @@ export default function SvipScreen() {
   // page); inner content is padded by PAGE_PAD.
   const pageW = winW;
 
+  // Frame-preview popup geometry — measured from the SVIP 5 frame art
+  // (2026-11-05, boss: "ফিট হচ্ছে না"). The SVIP 5 frame sprite
+  // (63f 8x8, 384px cells) has a DP opening of only 94px at its
+  // smallest (the tigers move) = 24.5% of the cell. The avatar must
+  // be ~90% of that opening to fit inside it in every frame, so the
+  // avatar is 22% of the frame size. The old 72px avatar on a 118px
+  // frame (61%) was 2.5x the opening and covered the ring. The SVIP 1
+  // dragon frame's opening is ~20% of its cell, so 22% fits it too
+  // (a 1px whisker overlap at most, diagonal only).
+  const previewFrameSize = Math.min(150, Math.min(winW * 0.66, 235) - 40);
+  const previewAvatarSize = Math.round(previewFrameSize * 0.22);
+  const previewAvatarFont = Math.round(previewAvatarSize * 0.42);
+
   // Live server config (both nodes) — a server edit reflects without restart.
   useEffect(() => {
     const unsubPage = subscribeSvipPageConfig(
@@ -566,12 +579,12 @@ export default function SvipScreen() {
 
               {preview?.kind === 'frame' ? (
                 <View style={{ alignItems: 'center', marginTop: 4 }}>
-                  <View style={{ width: 118, height: 118, alignItems: 'center', justifyContent: 'center' }}>
+                  <View style={{ width: previewFrameSize, height: previewFrameSize, alignItems: 'center', justifyContent: 'center' }}>
                     {preview.art && preview.sprite ? (
                       <View style={{ position: 'absolute', left: 0, top: 0 }}>
                         <SvipSpriteFrame
                           artUrl={preview.art}
-                          size={118}
+                          size={previewFrameSize}
                           cols={preview.sprite.cols}
                           rows={preview.sprite.rows}
                           frames={preview.sprite.frames}
@@ -582,17 +595,17 @@ export default function SvipScreen() {
                     {photoUrl ? (
                       <ExpoImage
                         source={{ uri: photoUrl }}
-                        style={{ width: 72, height: 72, borderRadius: 36 }}
+                        style={{ width: previewAvatarSize, height: previewAvatarSize, borderRadius: previewAvatarSize / 2 }}
                         contentFit="cover"
                         cachePolicy="memory-disk"
                       />
                     ) : (
                       <View style={{
-                        width: 72, height: 72, borderRadius: 36,
+                        width: previewAvatarSize, height: previewAvatarSize, borderRadius: previewAvatarSize / 2,
                         backgroundColor: theme.gold, alignItems: 'center', justifyContent: 'center',
                       }}
                       >
-                        <Text style={{ fontSize: 30, fontWeight: '800', color: theme.onGold }}>{initial}</Text>
+                        <Text style={{ fontSize: previewAvatarFont, fontWeight: '800', color: theme.onGold }}>{initial}</Text>
                       </View>
                     )}
                   </View>
