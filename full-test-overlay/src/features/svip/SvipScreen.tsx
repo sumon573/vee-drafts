@@ -104,17 +104,17 @@ export default function SvipScreen() {
   // page); inner content is padded by PAGE_PAD.
   const pageW = winW;
 
-  // Frame-preview popup geometry — measured from the SVIP 5 frame art
-  // (2026-11-05, boss: "ফিট হচ্ছে না"). The SVIP 5 frame sprite
-  // (63f 8x8, 384px cells) has a DP opening of only 94px at its
-  // smallest (the tigers move) = 24.5% of the cell. The avatar must
-  // be ~90% of that opening to fit inside it in every frame, so the
-  // avatar is 22% of the frame size. The old 72px avatar on a 118px
-  // frame (61%) was 2.5x the opening and covered the ring. The SVIP 1
-  // dragon frame's opening is ~20% of its cell, so 22% fits it too
-  // (a 1px whisker overlap at most, diagonal only).
+  // Frame-preview popup geometry — measured from the SVIP 5 frame art.
+  // The avatar must FILL the frame's inner dark disc (the visual DP
+  // opening), not sit as a dot inside it. Measured 2026-11-05: the disc
+  // is an ellipse ~41% wide x ~30% tall (frame 0: 158x115px, frame 31:
+  // 157x122px of a 384px cell). A circular avatar is limited by the
+  // vertical (~30%), so the avatar is 30% of the frame size (45px on a
+  // 150px frame). The old 22% (33px) was too small — boss: "কই ফিট
+  // হয়েছে". The SVIP 1 dragon frame's vertical opening is ~29%, so 30%
+  // fits it too (a hair of whisker overlap at most, diagonal only).
   const previewFrameSize = Math.min(150, Math.min(winW * 0.66, 235) - 40);
-  const previewAvatarSize = Math.round(previewFrameSize * 0.22);
+  const previewAvatarSize = Math.round(previewFrameSize * 0.30);
   const previewAvatarFont = Math.round(previewAvatarSize * 0.42);
 
   // Live server config (both nodes) — a server edit reflects without restart.
