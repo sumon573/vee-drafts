@@ -40,11 +40,13 @@ import {
   subscribeIntimacy, intimacyLevelFor, intimacyPairKey,
 } from '../services/intimacyService';
 import { subscribePairHandshake } from '../services/micHandshakeService';
+import { subscribeRoomHeatFlag } from '../services/roomHeat';
 import { useStoreRoomDecor } from '@/src/hooks/useStoreItems';
 import RoomChatMessage from '../components/RoomChatMessage';
 import { RoomInfoModal } from '../components/RoomInfoModal';
 import { MarqueeRoomName } from '../components/MarqueeRoomName';
 import GrabTopPill from '../components/GrabTopPill';
+import RoomHeatPill from '../components/RoomHeatPill';
 import { OperationHistoryModal } from '../components/OperationHistoryModal';
 import { SettingsModal } from '../components/SettingsModal';
 import { RoomCustomizePanel } from '../components/RoomCustomizePanel';
@@ -764,6 +766,10 @@ export default function VoiceRoomScreen() {
   
   const [roomTopic,     setRoomTopic]    = useState<string>(t('voiceRoom.creation.defaultTopic'));
   const [roomName,      setRoomName]     = useState(ROOM_META.name);
+  // F3 Room Heat: server-computed score for this room (from rooms/{id}/info.heat)
+  // + the server flag (featureFlags/roomHeat). Flag off or missing heat = hidden.
+  const [roomHeat, setRoomHeat] = useState<number | null>(null);
+  const [heatEnabled, setHeatEnabled] = useState(false);
   const [roomImageUri, setRoomImageUri] = useState<string | null>(null);
   const [activeThemeId, setActiveThemeId] = useState('imo-light');
   
@@ -1378,6 +1384,9 @@ export default function VoiceRoomScreen() {
       return;
     }
     if (typeof info.name === 'string' && info.name) setRoomName(info.name);
+    // F3 Room Heat: server score only — a missing/non-numeric heat clears
+    // to null so the header pill hides (never a stale or fake 0).
+    setRoomHeat(typeof info.heat === 'number' ? info.heat : null);
     // Batch 1 (1.3): live room diamond total for the header chip.
     setRoomDiamonds(typeof info.totalDiamonds === 'number' && Number.isFinite(info.totalDiamonds) ? info.totalDiamonds : null);
     setRoomTopic(info.topic);
@@ -1463,6 +1472,9 @@ export default function VoiceRoomScreen() {
     if (watcherPollActive || pass2PollActive) return;
     return subscribeRoomInfo(roomId, handleRoomInfo);
   }, [roomId, watcherPollActive, pass2PollActive, liveRefreshKey]);
+
+  // F3 Room Heat: server flag only (featureFlags/roomHeat). Off = no heat pill.
+  useEffect(() => subscribeRoomHeatFlag(setHeatEnabled), []);
 
   const forceLeftRef = useRef(false);
   useEffect(() => {
@@ -4439,6 +4451,9 @@ export default function VoiceRoomScreen() {
               onPress={() => setMembersOpen(true)}
               person={allMembers[0]}
             />
+            {/* F3 Room Heat: server score pill (flag-gated inside the pill;
+                missing heat or flag off renders nothing — no layout shift). */}
+            <RoomHeatPill heat={roomHeat} enabled={heatEnabled} />
             {/* 2026-10-23 (boss): announcement entry REMOVED from the header.
                 Posting/editing now lives inside Settings; a posted
                 announcement shows as a slim highlighted strip pinned at
