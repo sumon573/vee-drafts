@@ -87,6 +87,8 @@ import { TurntableGameModal } from '../components/games/TurntableGameModal';
 import { LuckyBagGameModal } from '../components/games/LuckyBagGameModal';
 import { LuduGameModal } from '../components/games/LuduGameModal';
 import { DeliciousGameSheet } from '../components/games/DeliciousGameSheet';
+import { subscribeGamesPolishFlag } from '../services/gamesPolishFlag';
+import type { GameChatBubbleMsg, GameSpectator } from '../components/games/GamePolish';
 import type { RoomGame, GameType } from '../services/roomGameService';
 import { subscribeGames } from '../services/roomGameService';
 import { ExitModal } from '../components/ExitModal';
@@ -778,6 +780,9 @@ export default function VoiceRoomScreen() {
   const [roomIsPublic,  setRoomIsPublic]  = useState(true);
   const [roomInfoLoaded, setRoomInfoLoaded] = useState(false);
   const [watcherFlag, setWatcherFlag] = useState<WatcherFlag | null>(null);
+  // Batch 3 (Games polish): server flag featureFlags/gamesPolish.
+  // Off = no chat bubbles, no Onlookers row, no trophy/coins.
+  const [gamesPolishEnabled, setGamesPolishEnabled] = useState(false);
   const pollApiRef = useRef<WatcherPollApi | null>(null);
   
   const [roomIsLocked,  setRoomIsLocked]  = useState(false);
@@ -1472,6 +1477,9 @@ export default function VoiceRoomScreen() {
     if (watcherPollActive || pass2PollActive) return;
     return subscribeRoomInfo(roomId, handleRoomInfo);
   }, [roomId, watcherPollActive, pass2PollActive, liveRefreshKey]);
+
+  // Batch 3 (Games polish): server flag only (featureFlags/gamesPolish).
+  useEffect(() => subscribeGamesPolishFlag(setGamesPolishEnabled), []);
 
   // F3 Room Heat: server flag only (featureFlags/roomHeat). Off = no heat pill.
   useEffect(() => subscribeRoomHeatFlag(setHeatEnabled), []);
@@ -2862,6 +2870,35 @@ export default function VoiceRoomScreen() {
     }
     return [...map.values()];
   }, [seatMembers, audience]);
+
+  // Batch 3 (Games polish): latest room-chat messages as board bubbles
+  // (3.1) — last 2 human text messages of this stay (no gift cards, no
+  // system messages); avatar from the member list when known. The
+  // Delicious spectators (3.2) = the room audience (non-seated members,
+  // from server presence). All three are empty when the flag is off.
+  const gameChatBubbles = useMemo((): GameChatBubbleMsg[] => {
+    if (!gamesPolishEnabled) return [];
+    const memberById = new Map(allMembers.map((m) => [m.id, m]));
+    return messages
+      .filter((m) => m.kind !== 'gift' && !!m.text && m.text.trim().length > 0 && m.senderId !== 'system' && m.sender !== 'system')
+      .slice(-2)
+      .map((m) => ({
+        id: m.id,
+        senderName: m.sender,
+        photoURL: (m.senderId ? memberById.get(m.senderId)?.photoURL : undefined) ?? null,
+        text: m.text,
+      }));
+  }, [gamesPolishEnabled, messages, allMembers]);
+
+  const gameRoomMembers = useMemo(
+    () => allMembers.map((m) => ({ uid: m.id, name: m.name, photoURL: m.photoURL ?? null })),
+    [allMembers],
+  );
+
+  const deliciousSpectators = useMemo((): GameSpectator[] => {
+    if (!gamesPolishEnabled) return [];
+    return audience.map((m) => ({ uid: m.id, name: m.name, photoURL: m.photoURL ?? null }));
+  }, [gamesPolishEnabled, audience]);
 
   const myRole: Role = useMemo(() => {
     // 2026-10-22 (boss): role resolution order FIXED. The old code read
@@ -5073,6 +5110,9 @@ export default function VoiceRoomScreen() {
         visible={deliciousOpen}
         myUid={myUid}
         onClose={() => setDeliciousOpen(false)}
+        chatMessages={gameChatBubbles}
+        spectators={deliciousSpectators}
+        gamesPolishEnabled={gamesPolishEnabled}
       />
       {/* 2026-10-25 (boss): imo-style customize panel + room music modal. */}
       <RoomCustomizePanel
@@ -5244,6 +5284,9 @@ export default function VoiceRoomScreen() {
           micMuted={mySeatIdx >= 0 ? (seats[mySeatIdx]?.muted ?? muted) : true}
           onToggleMic={toggleMic}
           onClose={() => setGameNav(null)}
+          chatMessages={gameChatBubbles}
+          roomMembers={gameRoomMembers}
+          gamesPolishEnabled={gamesPolishEnabled}
         />
       )}
     </View>
