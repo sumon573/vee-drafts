@@ -130,7 +130,10 @@ export default function HomeBannerCarousel({ slides, autoScrollMs, onAction }: P
               <Image
                 source={{ uri: item.imageUrl }}
                 style={{ position: 'absolute', width: '100%', height: '100%' }}
-                contentFit="cover"
+                // Contain, not cover: server art is Vee's own crest art
+                // (square, transparent) — the gradient is the background,
+                // so the whole crest stays visible instead of being cropped.
+                contentFit="contain"
                 cachePolicy="memory-disk"
               />
             ) : null}
