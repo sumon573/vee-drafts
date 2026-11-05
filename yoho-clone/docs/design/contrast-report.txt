@@ -1,0 +1,31 @@
+  AAA   17.85:1  text                     on bg                   
+  AAA   17.06:1  text                     on surface              
+  AAA   16.30:1  text                     on surface-2            
+  AAA   15.81:1  text                     on accent-soft          
+  AA     4.76:1  text-muted               on bg                   
+  AA     4.55:1  text-muted               on surface              
+  AA     5.47:1  on-accent                on accent               
+  AAA    7.63:1  on-accent                on accent-strong        
+  AA     5.47:1  accent                   on bg                   
+  AA     5.23:1  accent                   on surface              
+  AA     4.85:1  accent                   on accent-soft          
+  AA     6.47:1  danger                   on bg                   
+  AA     6.18:1  danger                   on surface              
+  AA     5.91:1  danger                   on danger-soft          
+  AA     5.48:1  success                  on bg                   
+  AA     5.21:1  success                  on success-soft         
+  AA     5.18:1  warning                  on bg                   
+  AA     4.88:1  warning                  on warning-soft         
+  AA     3.19:1  vip                      on bg                   large
+  AAA    9.48:1  room-text                on room-bg-start        
+  AAA   17.85:1  room-text                on room-bg-end          
+  AAA   10.35:1  room-text                on room-surface         
+  AA     6.38:1  room-text-muted          on room-bg-start        
+  AAA   12.02:1  room-text-muted          on room-bg-end          
+  PASS   4.76:1  border-input             on bg                   ui
+  AA     4.85:1  tag-chat-text            on tag-chat-bg          
+  AA     5.17:1  tag-sing-text            on tag-sing-bg          
+  AA     5.72:1  tag-dating-text          on tag-dating-bg        
+  AA     6.37:1  tag-party-text           on tag-party-bg         
+
+  29 pairs, 0 failing AA

@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#0f766e",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.yohoclone.app",
+      "predictiveBackGestureEnabled": false
+    },
+    "icon": "./assets/icon.png",
+    "ios": {
+      "bundleIdentifier": "com.yohoclone.app",
+      "supportsTablet": true
+    },
+    "name": "YoHo Clone",
+    "orientation": "portrait",
+    "plugins": [
+      "expo-router",
+      "expo-web-browser",
+      "@livekit/react-native-expo-plugin"
+    ],
+    "scheme": "yoho",
+    "slug": "yoho-clone",
+    "userInterfaceStyle": "light",
+    "version": "1.0.0",
+    "web": {
+      "favicon": "./assets/favicon.png"
+    }
+  }
+}

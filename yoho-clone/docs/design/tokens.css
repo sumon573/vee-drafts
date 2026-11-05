@@ -1,0 +1,84 @@
+/* Design tokens for the YoHo clone — generated from tokens.json (replica-design).
+   Source of truth is tokens.json; do not edit these values by hand.
+   The palette is the clone's OWN provisional palette (pending replica-brand):
+   accent is deep teal, NOT YoHo's vivid green; the room theme is a dark
+   teal-slate gradient, NOT YoHo's violet-cyan. */
+
+:root {
+  /* colour roles */
+  --color-bg: #ffffff;
+  --color-surface: #f8fafc;
+  --color-surface-2: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-border-input: #64748b;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-accent: #0f766e;
+  --color-accent-strong: #0b5e57;
+  --color-accent-soft: #e6f4f3;
+  --color-on-accent: #ffffff;
+  --color-danger: #b91c1c;
+  --color-danger-soft: #fef2f2;
+  --color-success: #047857;
+  --color-success-soft: #ecfdf5;
+  --color-warning: #c2410c;
+  --color-warning-soft: #fff7ed;
+  --color-vip: #d97706;
+  --color-vip-soft: #fef3c7;
+  /* topic tags (soft chips; dark text on light tint) */
+  --color-tag-chat-bg: #e6f4f3; --color-tag-chat-text: #0f766e;
+  --color-tag-sing-bg: #e0f2fe; --color-tag-sing-text: #0369a1;
+  --color-tag-dating-bg: #fff1f2; --color-tag-dating-text: #be123c;
+  --color-tag-party-bg: #fef3c7; --color-tag-party-text: #92400e;
+  /* functional currency labels (not brand) */
+  --color-coin: #f59e0b;
+  --color-diamond: #0ea5e9;
+  --color-bean: #f97316;
+  /* voice-room theme (dark surface; gradient top -> bottom) */
+  --color-room-bg-start: #134e4a;
+  --color-room-bg-end: #0f172a;
+  --color-room-surface: #334155;
+  --color-room-border: #475569;
+  --color-room-text: #ffffff;
+  --color-room-text-muted: #cbd5e1;
+  --color-room-glow: #14b8a6;
+  /* game colours (fills for the Ludo board / Dominoes felt, not text) */
+  --color-game-ludo-red: #dc2626;
+  --color-game-ludo-green: #16a34a;
+  --color-game-ludo-yellow: #eab308;
+  --color-game-ludo-blue: #2563eb;
+  --color-game-felt: #166534;
+  /* scrim (photo gradients + modal scrims) */
+  --color-overlay: rgba(15,23,42,0.55);
+
+  /* type */
+  --font-sans: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --type-xs-size: 12px; --type-xs-line: 16px; --type-xs-weight: 500;
+  --type-sm-size: 14px; --type-sm-line: 20px; --type-sm-weight: 400;
+  --type-base-size: 16px; --type-base-line: 24px; --type-base-weight: 400;
+  --type-lg-size: 20px; --type-lg-line: 28px; --type-lg-weight: 600;
+  --type-xl-size: 28px; --type-xl-line: 34px; --type-xl-weight: 700;
+  --type-display-size: 40px; --type-display-line: 44px; --type-display-weight: 700;
+
+  /* spacing (4/8 base; index = step) */
+  --space-0: 0; --space-1: 4px; --space-2: 8px; --space-3: 12px;
+  --space-4: 16px; --space-5: 24px; --space-6: 32px; --space-7: 48px; --space-8: 64px;
+
+  /* radius */
+  --radius-sm: 6px; --radius-md: 10px; --radius-lg: 16px; --radius-xl: 24px; --radius-pill: 999px;
+
+  /* shadow */
+  --shadow-card: 0 1px 2px rgba(16,24,40,.06), 0 1px 3px rgba(16,24,40,.10);
+  --shadow-pop: 0 12px 32px rgba(16,24,40,.16);
+
+  /* motion */
+  --motion-fast: 120ms; --motion-base: 200ms; --motion-slow: 400ms; --motion-pulse: 1600ms;
+  --motion-ease: cubic-bezier(.2,.8,.2,1);
+
+  /* layout (phone-first) */
+  --layout-max-width: 420px;
+  --layout-header-height: 56px;
+  --layout-bottom-nav-height: 56px;
+  --layout-page-padding: 16px;
+}

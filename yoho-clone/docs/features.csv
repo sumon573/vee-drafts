@@ -1,0 +1,137 @@
+feature,area,priority,original,clone,notes
+Sign up with SMS / message,onboarding,must,yes,no,
+Sign up with Facebook,onboarding,must,yes,no,
+Sign up with Google,onboarding,must,yes,partial,"vertical slice: code written (expo-web-browser OAuth, Vee pattern); needs the clone OAuth client ID injected"
+Sign up with TikTok,onboarding,must,yes,no,
+New user registration prompt,onboarding,must,yes,no,
+Language selection on first launch,onboarding,must,yes,partial,vertical slice: English-only; language picker is a later milestone
+Basic profile setup after sign-up,onboarding,must,yes,yes,"vertical slice: S04 (nickname, gender, age, country, bio)"
+Can't login? recovery link,onboarding,must,yes,no,
+Home room discovery feed (Hot/Related tabs),discovery,must,yes,yes,vertical slice: S05
+Banner carousel on Home,discovery,should,yes,partial,vertical slice: static promo banner; auto-scroll carousel is later
+Room cards with cover + topic tag + listener count,discovery,must,yes,yes,vertical slice: S05
+Topic tags (Chat/Sing/Dating/Party/music/Karaoke/Truth or Dare),discovery,must,yes,partial,vertical slice: Chat/Sing/Dating/Party; music/Karaoke/Truth or Dare are later
+Search rooms and users,discovery,must,yes,no,
+Activity rooms (themed + Join button + online count),discovery,should,yes,no,
+Events entry on Home,discovery,should,yes,no,
+Create a group voice room,voice room,must,yes,yes,"vertical slice: minimal form (title, topic, capacity); entry conditions + themes are later"
+Join a voice room from a card,voice room,must,yes,yes,vertical slice: S05 -> S07
+8 mic seats + host seat,voice room,must,yes,yes,vertical slice: S07 (host seat 0 + guests 1-8)
+Take a mic seat,voice room,must,yes,yes,vertical slice: S07 (RTDB transaction claim)
+Leave a mic seat,voice room,must,yes,yes,vertical slice: S07 (tap own seat)
+Mute / unmute mic,voice room,must,yes,yes,vertical slice: S07 (LiveKit mic + RTDB seat state)
+Speaker on/off,voice room,must,yes,no,
+Room text chat,voice room,must,yes,yes,vertical slice: S07 (RTDB realtime chat)
+Emoji in room chat,voice room,must,yes,no,
+"Room ""..."" menu",voice room,must,yes,no,
+Exit / leave room,voice room,must,yes,yes,vertical slice: S07 (X button + back)
+Room title + numeric room ID,voice room,must,yes,yes,vertical slice: S07 header
+Online user count in room,voice room,must,yes,yes,vertical slice: S07 header (RTDB transaction counter)
+Room diamond value display,voice room,must,yes,no,
+Record room audio,voice room,should,yes,no,Record button seen in Play screenshot
+In-room music player,voice room,should,yes,no,disc icon in room
+Room capacity setting,voice room,should,yes,partial,host control | vertical slice: capacity stepper in create form (2-9); join-time enforcement is later
+Room entry conditions (open/password/invite-only),voice room,must,yes,no,
+Mic seat rules (who can take a seat),voice room,should,yes,no,
+Room privacy controls (who joins/listens/interacts),voice room,should,yes,no,2026 update
+Anonymous mode in rooms,voice room,should,yes,no,2026 update
+Level badges on chat messages,voice room,should,yes,no,
+Ludo in room,games,must,yes,no,
+Uno in room,games,must,yes,no,
+Dominoes in room,games,must,yes,no,
+Arcade fishing game in room,games,should,yes,no,
+Parcheesi in room,games,should,yes,no,
+Game stakes with coins,games,should,yes,no,
+Spectator / Onlookers mode,games,should,yes,no,
+Game result + trophy,games,should,yes,no,
+Voice-intro discovery list (suggested users),private chat,must,yes,no,
+Listen to a user's voice intro,private chat,must,yes,no,
+Say hi to start a private chat,private chat,must,yes,no,
+1-to-1 text chat,private chat,must,yes,no,
+Voice messages in private chat,private chat,must,yes,no,
+Record your own voice intro,private chat,must,yes,no,
+1-to-1 voice call,private chat,should,yes,no,call feature; mute option removed in a 2026 update per review
+Moments feed (Related/Hot tabs),moments,should,yes,no,
+Post a Moment (photo + text),moments,should,yes,no,
+Like a Moment,moments,should,yes,no,
+Moment view counts,moments,should,yes,no,
+Country tags on Moments,moments,could,yes,no,
+Chat button on Moments,moments,should,yes,no,
+Game promo cards inside Moments feed,moments,could,yes,no,
+View another user's profile,profile,must,yes,no,
+Edit own profile,profile,must,yes,no,
+Avatar + cover,profile,must,yes,partial,vertical slice: avatar shows initials; photo upload + cover are later (need media service)
+Bio,profile,must,yes,yes,vertical slice: collected at profile setup (S04)
+Fans / Follow counts + lists,profile,must,yes,no,
+Follow a user,profile,must,yes,no,
+Add Friend,profile,must,yes,no,
+Find Me button,profile,should,yes,no,
+Photo Album on profile,profile,should,yes,no,
+Cars collection on profile,profile,could,yes,no,entrance-effect collection display
+Gifts received list with counts,profile,should,yes,no,
+Level / charm / age badges,profile,should,yes,no,
+Copy YoHo ID (Server Name + Gravity icon),profile,must,yes,no,needed for top-up
+Last-active + country on profile,profile,should,yes,no,
+Coin balance display,wallet,must,yes,no,
+Diamond balance display,wallet,must,yes,no,
+Beans balance (host earnings),wallet,must,yes,no,
+Buy coin packs (7000-708000),wallet,must,yes,no,
+Buy diamond packs,wallet,must,yes,no,
+Web recharge (m.yoho.media),wallet,should,yes,no,
+In-app purchase (Play / App Store),wallet,must,yes,no,
+Host settlement / Beans cash-out,wallet,must,yes,no,
+Purchase verification holds + daily caps,wallet,should,yes,no,2026 rules
+2FA for account + purchases,security,should,yes,no,
+VIP tiers 1-10 (spend-based),vip,must,yes,no,
+Baron subscription (30 days),vip,should,yes,no,
+Duke subscription (30 days),vip,should,yes,no,
+Custom entrance effects,vip,should,yes,no,
+Avatar frames,vip,should,yes,no,
+Chat bubbles,vip,should,yes,no,
+Microphone halo effects,vip,should,yes,no,
+Priority customer support for high VIP,vip,could,yes,no,
+VIP streak protection (VIP4-6 36h),vip,could,yes,no,
+VIP premium cooldown reduction (VIP7-10),vip,could,yes,no,
+Gift panel in room/chat,gifts,must,yes,no,
+Localized themed gifts,gifts,should,yes,no,
+Gift animations on send,gifts,must,yes,no,
+Intimacy points from gifts,gifts,must,yes,no,
+High-value diamond gifts (Aurora Borealis/Castle/Gala Dragon/Love Carriage),gifts,should,yes,no,
+7 premium voice filters (Premium 2026),voice filters,should,yes,no,
+Voice filter activation (long-press mic),voice filters,should,yes,no,
+5-second filter preview,voice filters,could,yes,no,
+Filter intensity slider,voice filters,could,yes,no,
+Nature Ambience soundscape sub-menu,voice filters,could,yes,no,
+Daily login streak,missions,should,yes,no,
+Mission Board (daily + weekly missions),missions,should,yes,no,
+Host-30-min mission reward,missions,should,yes,no,
+Join-rooms mission reward,missions,should,yes,no,
+Send-gift mission reward,missions,should,yes,no,
+Update-profile mission reward,missions,could,yes,no,
+Seasonal events (Gold Rush/Ramadan/Milestone),events,should,yes,no,
+Referral program (invite link + bonuses),events,should,yes,no,
+Lucky Draw & Wheel events,events,could,yes,no,
+Lucky Bag (66/99 + 6-person open),events,could,yes,no,
+Greedy/Grade Jackpot,events,could,yes,no,
+Join an agency,agency,should,yes,no,
+Agency owner + member management,agency,could,yes,no,
+NOC to switch agency,agency,could,yes,no,
+Agency settlement / earnings targets,agency,should,yes,no,
+Room rankings / leaderboard,rankings,should,yes,no,
+Broadcaster/host rankings,rankings,should,yes,no,
+Squad participation + bonuses,rankings,could,yes,no,
+Follower milestones + bonuses,rankings,could,yes,no,
+Report a user/room,safety,must,yes,no,
+Block a user,safety,must,yes,no,
+24x7 online customer service,safety,should,yes,no,
+In-app support bot,safety,could,yes,no,
+Push notifications,notifications,should,yes,no,
+In-app notification list,notifications,should,yes,no,
+YoHo's 27M-user network and live rooms,network,skip,yes,skip,their network and users are not part of the product you can rebuild
+"YoHo brand, logo, app icon, marketing copy",brand,skip,yes,skip,YoHo's trademark and copy
+"YoHo gift art, car art, entrance-effect art, frames",content,skip,yes,skip,licensed/owned visual assets; clone needs its own art
+Licensed music catalogue,content,skip,yes,skip,music licences are not part of the product
+Google Play / App Store billing + third-party top-up platforms,payments,skip,yes,skip,payment rails; clone needs its own payment path
+Agency/creator network and settlement deals,network,skip,yes,skip,their partner network
+Exact Lucky Bag / Jackpot odds and anti-fraud rules,economy,skip,yes,skip,proprietary unpublished rules
+YoHo Lite (separate lighter app),platform,skip,yes,skip,separate app; rescope after main clone
