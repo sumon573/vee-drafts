@@ -134,7 +134,7 @@ header.site{position:sticky;top:0;z-index:40;background:var(--surface);border-bo
 .card h3:hover{color:var(--green-deep)}
 .card .note{font-size:13px;color:var(--muted)}
 .card .desc{font-size:13.5px;color:var(--muted);margin:4px 0 0}
-.card .foot{margin-top:auto;padding-top:10px}
+.card .cardfoot{margin-top:auto;padding-top:10px;display:block;width:100%;min-width:0}
 .pricerow{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
 .now{font-size:19px;font-weight:700;color:var(--price)}
 .was{color:var(--faint);text-decoration:line-through;font-size:13.5px}
@@ -143,15 +143,22 @@ header.site{position:sticky;top:0;z-index:40;background:var(--surface);border-bo
 .addbtn{flex:1;min-width:0;background:#fff;color:var(--green);border:1.5px solid var(--green);border-radius:8px;padding:9px 6px;font-weight:700;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:5px;min-height:44px;white-space:nowrap}
 .addbtn:hover{background:var(--green-softer)}
 .orderbtn{flex:1;min-width:0;background:var(--green);color:#fff;border:1.5px solid var(--green);border-radius:8px;padding:9px 6px;font-weight:700;font-size:13.5px;display:flex;align-items:center;justify-content:center;gap:5px;min-height:44px;white-space:nowrap}
-/* Card footer: the 5-column grid makes each card too narrow for two
-   side-by-side buttons — the row overflowed the card and Order Now was
-   clipped by the card's overflow:hidden. Stack both buttons full-width
-   so each is fully visible and tappable on every card. */
+/* Card footer layout — root cause of the clipped buttons: the card
+   footer used class "foot", which collides with the page footer's
+   .foot{display:grid;grid-template-columns:1.6fr 1fr 1fr 1.2fr} rule.
+   The card footer became a 3-column grid, squeezing the price row,
+   "You save" and the button row side-by-side into narrow columns —
+   the buttons rendered ~14px wide with their text overflowing
+   invisibly, and stacking .btnrow could never fix that. The card
+   footer now uses the unique class "cardfoot": a plain block with the
+   price on its own line, "You save" on the line below it, and both
+   buttons stacked full-width underneath. */
 .card{min-width:0}
 .card .body{min-width:0}
-.card .foot{width:100%;min-width:0}
-.card .btnrow{flex-direction:column;width:100%}
-.card .btnrow .addbtn,.card .btnrow .orderbtn{flex:none;width:100%}
+.card .cardfoot .pricerow{display:flex;width:100%}
+.card .cardfoot .save{display:block;width:100%;margin-top:3px}
+.card .cardfoot .btnrow{display:flex;flex-direction:column;width:100%;min-width:0}
+.card .cardfoot .btnrow .addbtn,.card .cardfoot .btnrow .orderbtn{flex:none;width:100%;min-width:0;align-self:stretch}
 .orderbtn:hover{background:var(--green-deep);border-color:var(--green-deep)}
 .emptyres{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius-lg);padding:44px 20px;text-align:center;grid-column:1/-1}
 .emptyres h3{font-size:19px;margin-bottom:6px}
@@ -752,7 +759,7 @@ function render(){
       + '<div class="body"><div class="brand">'+p.catLabel+' · '+p.badge+'</div><h3 data-view="'+p.id+'">'+p.name+'</h3>'
       + '<div class="note">'+p.note+'</div>'
       + '<p class="desc">'+p.desc+'</p>'
-      + '<div class="foot"><div class="pricerow"><span class="now">'+money(p.price)+'</span><span class="was">'+money(p.was)+'</span></div>'
+      + '<div class="cardfoot"><div class="pricerow"><span class="now">'+money(p.price)+'</span><span class="was">'+money(p.was)+'</span></div>'
       + '<div class="save">You save '+money(p.was-p.price)+'</div>'
       + '<div class="btnrow"><button class="addbtn" data-add="'+p.id+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add to Cart</button>'
       + '<button class="orderbtn" data-order="'+p.id+'">Order Now</button></div></div>'
@@ -972,20 +979,24 @@ function placeOrder(){
   btn.disabled=true; btn.textContent='Placing your order…';
   document.getElementById('coError').classList.remove('on');
   var itemList = items.map(function(it){ var p=byId(it.id); return { id:it.id, name:p?p.name:it.id, quantity:it.qty, price:p?p.price:0 }; });
+  var streetV = document.getElementById('fStreet').value.trim();
+  var cityV = document.getElementById('fCity').value.trim();
+  var postV = document.getElementById('fPost').value.trim();
+  var countryV = document.getElementById('fCountry').value;
+  // The order API requires `address` as ONE string (min length 10) —
+  // sending it as an object is rejected with "full delivery address
+  // required". Combine the form fields into a single address string
+  // and keep the separate parts in the payload as well.
+  var addressStr = streetV + ', ' + cityV + ' ' + postV + ', ' + countryV;
   var payload = {
     name: document.getElementById('fName').value.trim(),
     email: document.getElementById('fEmail').value.trim(),
     phone: document.getElementById('fPhone').value.trim(),
-    address: {
-      street: document.getElementById('fStreet').value.trim(),
-      city: document.getElementById('fCity').value.trim(),
-      postcode: document.getElementById('fPost').value.trim(),
-      country: document.getElementById('fCountry').value
-    },
-    street: document.getElementById('fStreet').value.trim(),
-    city: document.getElementById('fCity').value.trim(),
-    postcode: document.getElementById('fPost').value.trim(),
-    country: document.getElementById('fCountry').value,
+    address: addressStr,
+    street: streetV,
+    city: cityV,
+    postcode: postV,
+    country: countryV,
     items: itemList,
     product: itemList.map(function(i){ return i.name+' × '+i.quantity; }).join(', '),
     quantity: t.count,
