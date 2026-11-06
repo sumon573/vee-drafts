@@ -106,15 +106,25 @@ export default function SvipScreen() {
 
   // Frame-preview popup geometry — measured from the SVIP 5 frame art.
   // The avatar must FILL the frame's inner dark disc (the visual DP
-  // opening), not sit as a dot inside it. Measured 2026-11-05: the disc
-  // is an ellipse ~41% wide x ~30% tall (frame 0: 158x115px, frame 31:
-  // 157x122px of a 384px cell). A circular avatar is limited by the
-  // vertical (~30%), so the avatar is 30% of the frame size (45px on a
-  // 150px frame). The old 22% (33px) was too small — boss: "কই ফিট
-  // হয়েছে". The SVIP 1 dragon frame's vertical opening is ~29%, so 30%
-  // fits it too (a hair of whisker overlap at most, diagonal only).
+  // opening), not sit as a dot inside it. Measured 2026-11-06 (dragon
+  // surge, replaces the tiger): the calm-frame opening is a wide
+  // ellipse — centre-row run ~57.8-58.6% W, centre-col run only
+  // ~34.6-34.9% H (hole bbox 58.6% W x 45.6-47.1% H; the dragons
+  // intrude at top/bottom centre, so the hole is taller off-centre).
+  // A circular avatar is limited by the vertical centre run (~35%),
+  // so the avatar is 35% of the frame size (53px on a 150px frame).
+  // That fills the height exactly and leaves ~12% frame-width dark
+  // disc each side at mid-height (down from ~14% at 30%) — the popup
+  // background is dark, so the remainder reads as the dark opening,
+  // not a hole. An ellipse matching the opening (~59% W x ~35% H)
+  // was REJECTED: this popup is shared by every tier's frame (the
+  // slot carries no tier), so it would cover the ring art on SVIP 1
+  // (~29% vertical opening) and the old tiger disc (41% W x 30% H),
+  // and cover-fit in a 1.69:1 box would crop a square DP photo
+  // (forehead/chin cut). The old 30% was calibrated for the tiger
+  // disc (~41% W x ~30% H) — "কই ফিট হয়েছে" no longer applies.
   const previewFrameSize = Math.min(150, Math.min(winW * 0.66, 235) - 40);
-  const previewAvatarSize = Math.round(previewFrameSize * 0.30);
+  const previewAvatarSize = Math.round(previewFrameSize * 0.35);
   const previewAvatarFont = Math.round(previewAvatarSize * 0.42);
 
   // Live server config (both nodes) — a server edit reflects without restart.
