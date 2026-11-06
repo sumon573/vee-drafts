@@ -30,6 +30,7 @@ import {
 import { Image } from 'expo-image';
 import { LinearGradient } from 'expo-linear-gradient';
 import type { HomePromoSlide, BannerAction } from '../services/homePromoService';
+import { GlassView } from '@/src/design/GlassView';
 
 // Vee's own gradient — dark navy #130D31 → gold tint (never YoHo's violet-cyan).
 const GRADIENT_COLORS = ['#130D31', '#2A1F4D', '#8A6D1B'] as const;
@@ -104,6 +105,12 @@ export default function HomeBannerCarousel({ slides, autoScrollMs, onAction }: P
   if (slides.length === 0) return null;
 
   return (
+    // Glass P1b (Candidate A, card radius 16 = carousel radius): a glass
+    // FRAME around the promo art — the fill sits behind the opaque
+    // slides, so only the hairline border + soft shadow read. Never
+    // glass OVER the server art itself (gradient / image / scrim /
+    // headline / CTA are all untouched inside).
+    <GlassView variant="card" mode="light">
     <View style={{ borderRadius: 16, overflow: 'hidden' }}>
       <FlatList
         ref={listRef}
@@ -219,5 +226,6 @@ export default function HomeBannerCarousel({ slides, autoScrollMs, onAction }: P
         </View>
       )}
     </View>
+    </GlassView>
   );
 }

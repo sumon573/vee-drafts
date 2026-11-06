@@ -1,0 +1,281 @@
+/**
+ * RoomRankModal — IMO in-room ranking port (2026-10-19).
+ *
+ * IMO evidence: voiceroom/ranklist/contributionrank/ (ContributionRankFragment,
+ * per-user contribution rows with avatar frame + noble info) and
+ * ranklist/onlinemember/ (live member ranking). Behavior ported; Vee's code.
+ *
+ * Tabs: Contribution (gift diamonds sent to members IN THIS ROOM, from the
+ * existing rooms/{roomId}/giftEvents node — real data, no new writes) |
+ * Online (live members ordered owner → admin → activity, reuse of the room's
+ * member ordering).
+ * Top-3 get gold/silver/bronze rank badges; the viewer's own rank is pinned
+ * at the bottom with DP + name (boss's standing leaderboard spec).
+ */
+import { useEffect, useMemo, useState } from 'react';
+import { View, Text, Modal, Pressable, ScrollView, Image } from 'react-native';
+import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { useTranslation } from 'react-i18next';
+import { get, ref } from 'firebase/database';
+import { database } from '@/src/config/firebase';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
+
+
+export interface RankMember {
+  uid: string;
+  name: string;
+  photoURL?: string | null;
+  color?: string;
+  initials?: string;
+}
+
+const RANK_COLORS = ['#F59E0B', '#94A3B8', '#B45309'];
+
+function RankBadge({ rank }: { rank: number }) {
+  if (rank > 3) {
+    return (
+      <View style={{ width: 28, alignItems: 'center' }}>
+        <Text style={{ color: '#8E8E93', fontSize: 14, fontWeight: '800' }}>{rank}</Text>
+      </View>
+    );
+  }
+  return (
+    <View style={{
+      width: 28, height: 28, borderRadius: 14, backgroundColor: RANK_COLORS[rank - 1],
+      alignItems: 'center', justifyContent: 'center',
+    }}>
+      <Text style={{ color: '#FFF', fontSize: 13, fontWeight: '900' }}>{rank}</Text>
+    </View>
+  );
+}
+
+function fmtCompact(n: number): string {
+  if (n >= 999_500_000) return `${parseFloat((n / 1_000_000_000).toFixed(1))}b`;
+  if (n >= 999_500) return `${parseFloat((n / 1_000_000).toFixed(1))}m`;
+  if (n >= 999.5) return `${parseFloat((n / 1_000).toFixed(1))}k`;
+  return `${n}`;
+}
+
+/** Small noble rank mark next to name (IMO: noble info in contribution rank rows). */
+function NobleMark({ rankIndex }: { rankIndex: number }) {
+  const [rank, setRank] = useState<{ name: string; color: string } | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { NOBLE_RANKS } = await import('@/src/services/nobleService');
+        const r = NOBLE_RANKS[rankIndex];
+        if (!cancelled && r) setRank({ name: r.name, color: r.color });
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [rankIndex]);
+  if (!rank) return null;
+  return (
+    <View style={{
+      marginLeft: 6, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8,
+      backgroundColor: rank.color + '22', borderWidth: 1, borderColor: rank.color + '66',
+    }}>
+      <Text style={{ color: rank.color, fontSize: 10, fontWeight: '800' }}>♛ {rank.name}</Text>
+    </View>
+  );
+}
+
+/* 2026-11-01 (batch56): rank row — own component because the rows render
+   via a map function (hooks cannot live in the map). King gold + shimmer
+   on the name; the noble mark beside it is untouched. */
+function RankRow({ uid, name, photoURL, color, initials, rank, right, nobleIdx }: {
+  uid: string; name: string; photoURL?: string | null; color?: string; initials?: string;
+  rank: number; right: string; nobleIdx: number;
+}) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{
+      flexDirection: 'row', alignItems: 'center', paddingVertical: 10,
+      borderBottomWidth: 0.5, borderBottomColor: '#E5E5EA',
+    }}>
+      <RankBadge rank={rank} />
+      {photoURL ? (
+        <Image source={{ uri: photoURL }} style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: '#F2F2F7' }} />
+      ) : (
+        <View style={{ width: 44, height: 44, borderRadius: 22, marginLeft: 10, backgroundColor: (color || '#05b5fa') + '22', alignItems: 'center', justifyContent: 'center' }}>
+          <Text style={{ color: color || '#05b5fa', fontSize: 15, fontWeight: '800' }}>{initials || '?'}</Text>
+        </View>
+      )}
+      <View style={{ flex: 1, marginLeft: 12, flexDirection: 'row', alignItems: 'center' }}>
+        <Text style={{ fontSize: 15, fontWeight: '600', color: isKing ? KING_GOLD : '#000', flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+        {isKing ? <KingSparkle /> : null}
+        {nobleIdx >= 0 && <NobleMark rankIndex={nobleIdx} />}
+      </View>
+      <Text style={{ fontSize: 14, fontWeight: '800', color: '#F59E0B' }}>{right}</Text>
+    </View>
+  );
+}
+
+export function RoomRankModal({ visible, roomId, members, myUid, onClose, glass }: {
+  visible: boolean;
+  roomId: string;
+  /** live members, already ordered owner → admin → activity */
+  members: RankMember[];
+  myUid: string | null;
+  onClose: () => void;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. */
+  glass?: ResolvedGlass;
+}) {
+  const { t } = useTranslation();
+  const isMyRowKing = useIsKing(myUid);
+  const [tab, setTab] = useState<'contribution' | 'online'>('contribution');
+  const TAB_NAMES: Record<'contribution' | 'online', string> = {
+    contribution: t('voiceRoom.rank.tab_contribution'),
+    online: t('voiceRoom.rank.tab_online'),
+  };
+  const [contrib, setContrib] = useState<{ uid: string; coins: number }[]>([]);
+  /** Noble rank index per uid (IMO: noble mark next to name in contribution rank). */
+  const [nobleRanks, setNobleRanks] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!visible || !roomId) return;
+    let cancelled = false;
+    get(ref(database, `rooms/${roomId}/giftEvents`)).then((snap) => {
+      if (cancelled) return;
+      const map = new Map<string, number>();
+      if (snap.exists()) {
+        snap.forEach((c) => {
+          const v = c.val() as { toUid?: string; coins?: number };
+          if (typeof v.toUid === 'string' && typeof v.coins === 'number') {
+            map.set(v.toUid, (map.get(v.toUid) ?? 0) + v.coins);
+          }
+        });
+      }
+      setContrib([...map.entries()].map(([uid, coins]) => ({ uid, coins })).sort((a, b) => b.coins - a.coins));
+    }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [visible, roomId]);
+
+  const nameOf = useMemo(() => {
+    const m = new Map<string, RankMember>();
+    members.forEach((x) => m.set(x.uid, x));
+    return m;
+  }, [members]);
+
+  const rows = useMemo(() => contrib.map((c) => ({
+    ...c,
+    member: nameOf.get(c.uid) ?? null,
+  })), [contrib, nameOf]);
+
+  useEffect(() => {
+    if (!visible || rows.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getNobleState } = await import('@/src/services/nobleService');
+        const entries = await Promise.all(
+          rows.slice(0, 50).map(async (r) => {
+            try {
+              const s = await getNobleState(r.uid);
+              return [r.uid, s && s.rankIndex >= 0 ? s.rankIndex : -1] as const;
+            } catch { return [r.uid, -1] as const; }
+          }),
+        );
+        if (!cancelled) setNobleRanks(new Map(entries));
+      } catch { /* non-critical */ }
+    })();
+    return () => { cancelled = true; };
+  }, [visible, rows]);
+
+  const myRank = useMemo(() => {
+    if (!myUid) return -1;
+    return rows.findIndex((r) => r.uid === myUid) + 1;
+  }, [rows, myUid]);
+
+  const myRow = myRank > 0 ? rows[myRank - 1] : null;
+
+  const renderRow = (uid: string, name: string, photoURL: string | null | undefined, color: string | undefined, initials: string | undefined, rank: number, right: string) => (
+    <RankRow key={uid} uid={uid} name={name} photoURL={photoURL} color={color} initials={initials} rank={rank} right={right} nobleIdx={nobleRanks.get(uid) ?? -1} />
+  );
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)' }} onPress={onClose} />
+      {/* Glass P1d: the sheet is glass `modal` over the dimmed backdrop.
+          Padding moves to the inner wrapper (plain View, never nested
+          glass) so the fill reaches the sheet edges. */}
+      <GlassView variant="modal" resolved={glass}
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0, maxHeight: '75%',
+        }}>
+        <View style={{ paddingBottom: 28 }}>
+        <View style={{ width: 40, height: 4, borderRadius: 2, backgroundColor: '#E5E5EA', alignSelf: 'center', marginTop: 10 }} />
+        <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingTop: 12 }}>
+          <Feather name="award" size={18} color="#F59E0B" />
+          <Text style={{ fontSize: 17, fontWeight: '800', color: '#000', marginLeft: 8, flex: 1 }}>
+            {t('voiceRoom.rank.title')}
+          </Text>
+          <Pressable onPress={onClose} hitSlop={12}>
+            <Feather name="x" size={22} color="#8E8E93" />
+          </Pressable>
+        </View>
+
+        <View style={{ flexDirection: 'row', marginHorizontal: 16, marginTop: 12, backgroundColor: '#F2F2F7', borderRadius: 999, padding: 3 }}>
+          {(['contribution', 'online'] as const).map((k) => (
+            <Pressable
+              key={k}
+              onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setTab(k); }}
+              style={{ flex: 1, borderRadius: 999, paddingVertical: 8, alignItems: 'center', backgroundColor: tab === k ? '#FFFFFF' : 'transparent' }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: '800', color: tab === k ? '#007AFF' : '#8E8E93' }}>
+                {TAB_NAMES[k]}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+
+        <ScrollView contentContainerStyle={{ paddingHorizontal: 16, paddingTop: 8 }} showsVerticalScrollIndicator={false}>
+          {tab === 'contribution' ? (
+            rows.length === 0 ? (
+              <View style={{ alignItems: 'center', paddingVertical: 36 }}>
+                <Feather name="gift" size={40} color="#C7C7CC" />
+                <Text style={{ color: '#8E8E93', fontSize: 14, marginTop: 12 }}>{t('voiceRoom.rank.empty')}</Text>
+              </View>
+            ) : (
+              rows.map((r, i) => renderRow(
+                r.uid,
+                r.member?.name || t('voiceRoom.rank.unknown'),
+                r.member?.photoURL, r.member?.color, r.member?.initials,
+                i + 1, `💎${fmtCompact(r.coins)}`,
+              ))
+            )
+          ) : (
+            members.map((m, i) => renderRow(m.uid, m.name, m.photoURL, m.color, m.initials, i + 1, ''))
+          )}
+        </ScrollView>
+
+        {tab === 'contribution' && myRow && myRank > 0 && (
+          <View style={{
+            marginHorizontal: 16, marginTop: 8, backgroundColor: '#E3F2FD', borderRadius: 12,
+            padding: 10, flexDirection: 'row', alignItems: 'center',
+          }}>
+            <Text style={{ color: '#007AFF', fontSize: 13, fontWeight: '800', marginRight: 8 }}>#{myRank}</Text>
+            <Text style={{ flex: 1, color: isMyRowKing ? KING_GOLD : '#000', fontSize: 14, fontWeight: '700' }} numberOfLines={1}>
+              {myRow.member?.name || t('voiceRoom.rank.you')}
+            </Text>
+            {isMyRowKing ? <KingSparkle /> : null}
+            <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+              <DiamondIcon size={14} />
+              <Text style={{ color: '#F59E0B', fontSize: 14, fontWeight: '800', marginLeft: 3 }}>{fmtCompact(myRow.coins)}</Text>
+            </View>
+          </View>
+        )}
+        </View>
+      </GlassView>
+    </Modal>
+  );
+}

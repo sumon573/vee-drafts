@@ -20,6 +20,8 @@ import { Feather } from '@expo/vector-icons';
 import { useTranslation } from 'react-i18next';
 import RoomHeatPill from './RoomHeatPill';
 import { VoiceRoom } from '../types/room';
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
 
 const C = {
   bg: '#FFFFFF',
@@ -33,7 +35,7 @@ const C = {
 const MAX_DP = 6;
 const DP = 24;
 
-type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number; hideLiveBadge?: boolean; heatEnabled?: boolean; showTopicChip?: boolean };
+type Props = { room: VoiceRoom; onPress?: () => void; distanceKm?: number; liveCount?: number; hideLiveBadge?: boolean; heatEnabled?: boolean; showTopicChip?: boolean; resolved?: ResolvedGlass };
 
 /**
  * Batch 2.2 (2026-11-05): topic as a soft chip — light bg + dark text,
@@ -68,7 +70,7 @@ function formatDistance(km: number): string {
 // Fix #30 effect (boss 2026-10-30 01:16): LIVE badge removed —
 // hideLiveBadge stays in Props so existing call sites type-check,
 // but it is now a no-op (badge JSX deleted below).
-export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount, heatEnabled, showTopicChip }: Props) {
+export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount, heatEnabled, showTopicChip, resolved }: Props) {
   // 2026-10-26 (weak network): same failed-cover fallback as RoomCard.
   const [imgFailed, setImgFailed] = useState(false);
   useEffect(() => { setImgFailed(false); }, [room.coverImageUrl]);
@@ -85,13 +87,14 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
   // 2026-10-31 (boss: room page EXACTLY like imo): completely flat —
   // no scale press, no shadow, no float. The card sits on the
   // background with only a hairline border, like imo.
+  // Glass P1b: the card panel is glass (Candidate A) — the token's soft
+  // shadow replaces the flat hairline-border look for this surface.
+  // Cover tile, member DPs, topic chip and pills stay plain Views inside
+  // it (never nest GlassView — fills stack into milk).
   return (
     <Pressable onPress={onPress}>
-      <View style={{
-        borderRadius: 14, padding: 12, marginBottom: 10,
-        backgroundColor: C.surface,
-        borderWidth: 1, borderColor: C.border,
-      }}>
+      <GlassView variant="card" resolved={resolved} style={{ marginBottom: 10 }}>
+        <View style={{ padding: 12 }}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           {/* Room cover tile */}
           <View style={{
@@ -243,7 +246,8 @@ export default memo(function RoomListItem({ room, onPress, distanceKm, liveCount
             </View>
           )}
         </View>
-      </View>
+        </View>
+      </GlassView>
     </Pressable>
   );
 });

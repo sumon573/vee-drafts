@@ -1,0 +1,1084 @@
+/**
+ * GiftsModal.tsx — IMO gift panel, exact rebuild (2026-10-19, boss order: হুবহু).
+ *
+ * IMO spec (from APK v2026.09.1051, BIUI tokens):
+ * - White bottom sheet, 20dp top corner radius, slide-up
+ * - NO header block (boss 2026-10-20: removed entirely) — the sheet opens
+ *   directly on the recipient row; ✕ close chip at the top-right corner
+ * - Tabs: Hot / Rank / Recent / Event — active = dark text + 26x3.5dp #05b5fa underline
+ * - 4-column grid, 64dp tiles (#f4f5f5, ~18dp radius), 12sp names (#8f9091)
+ * - Footer: diamond balance + top-up, count stepper (- xN +), gradient Send
+ *   button (#ccebff -> #66c4ff, text #002c47)
+ *
+ * Behavior (IMO, from jadx):
+ * - ComboState: same gift re-sent within the window stacks xN
+ * - Big gifts (>= 2000) trigger the room-wide broadcast banner
+ * - Fullscreen animation plays for premium gifts (WebP via expo-image)
+ *
+ * Preserved Vee logic (untouched): server-driven gift_catalog, idempotency
+ * keys (no double-charge), parallel multi-recipient sends, balance pre-check,
+ * self-gift routing, giftFeed push, 70/30 commission via walletService,
+ * gift-only-inside-rooms.
+ *
+ * 2026-10-27 (boss: To-row): with live seats, the To row is the
+ * quick-pick strip — nearest seated user auto-selected, up to 5
+ * other seated users, [+] at the end; without seats, the old
+ * selected-chips row renders.
+ */
+import { useState, useEffect, useCallback, useMemo, memo } from 'react';
+import { Image as ExpoImage } from 'expo-image';
+import {
+  View, Text, ScrollView, Alert, Pressable, Modal, Image,
+  FlatList, Dimensions,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { router } from 'expo-router';
+import PremiumLoader from '@/src/components/PremiumLoader';
+import { DiamondIcon } from '@/src/components/DiamondIcon';
+import { getErrorCause } from '@/src/utils/errorDisplay';
+import { Feather } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import * as Crypto from 'expo-crypto';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useTranslation } from 'react-i18next';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ref, push, get, serverTimestamp } from 'firebase/database';
+import { database } from '@/src/config/firebase';
+import { Participant, GiftSentInfo } from '../types/room';
+import { useIsKing } from '@/src/hooks/useNobleRank';
+import { KingSparkle, KING_GOLD } from './KingShimmerName';
+// Glass P1d — Candidate A "Pod Glass" (see src/design/GLASS_RULES.md).
+// Translucent fill only — no expo-blur, static, one layer per surface.
+import { GlassView } from '@/src/design/GlassView';
+import type { ResolvedGlass } from '@/src/design/glassTokens';
+
+import {
+  sendGift, getBalance, getWalletBalance, canSelfSend,
+  InsufficientFundsError, NetworkError,
+} from '@/src/features/wallet/walletService';
+import {
+  fetchGiftCatalog, subscribeGiftCatalog, CatalogGift,
+} from '../services/giftCatalogService';
+
+/* ── IMO tokens ─────────────────────────────────────────────── */
+const IMO_BLUE = '#05b5fa';
+const IMO_SHEET = '#ffffff';
+const IMO_TILE = '#f4f5f5';
+const IMO_SUB = '#8f9091';
+const IMO_TITLE = '#1a1a1a';
+const IMO_SEND_FROM = '#ccebff';
+const IMO_SEND_TO = '#66c4ff';
+const IMO_SEND_TEXT = '#002c47';
+// IMO big-gift broadcast threshold (server decides in IMO; Vee: blast tier)
+const BIG_GIFT_COINS = 2000;
+const MAX_RECIPIENTS = 10;
+const MAX_QTY = 99;
+const COMBO_WINDOW_MS = 6000;
+
+/** Compact counts — boss standard: 1k / 10k / 100k / 1m / 1b (lowercase). */
+function formatCompact(n: number): string {
+  if (!Number.isFinite(n)) return '0';
+  const trim = (v: number) =>
+    v >= 100 ? String(Math.round(v)) : v.toFixed(1).replace(/\.0$/, '');
+  if (n >= 1e9) return trim(n / 1e9) + 'b';
+  if (n >= 1e6) return trim(n / 1e6) + 'm';
+  if (n >= 1e3) return trim(n / 1e3) + 'k';
+  return String(Math.floor(n));
+}
+
+/* ── Types ──────────────────────────────────────────────────── */
+
+interface GiftItem {
+  id: string;
+  nameKey: string;
+  coins: number;
+  category: string;
+  thumbnailUrl?: string;
+  animationUrl?: string;
+  animationType?: string;
+  videoSize?: number;
+  videoFullscreen?: boolean;
+  /** Minimum SVIP tier required (IMO: "Available to SVIP %d or above") */
+  minSvipLevel?: number;
+  /** Minimum noble rank index (0-based, NOBLE_RANKS) required to send */
+  minNobleRank?: number;
+}
+
+function catalogToGiftItem(cg: CatalogGift): GiftItem {
+  return {
+    id: cg.id,
+    nameKey: cg.name,
+    coins: cg.price,
+    category: cg.category,
+    thumbnailUrl: cg.thumbnailUrl,
+    animationUrl: cg.animationUrl,
+    animationType: cg.animationType,
+    videoSize: cg.videoSize,
+    videoFullscreen: cg.videoFullscreen,
+    minSvipLevel: cg.minSvipLevel,
+    minNobleRank: cg.minNobleRank,
+  };
+}
+
+type ImoTab = 'hot' | 'rank' | 'recent' | 'event';
+
+/**
+ * Perf (2026-10-22 audit): one gift tile, memoized. Previously every tile
+ * re-rendered on any modal state change (selection, balance tick) and the
+ * thumbnail used uncached RN Image — the panel flickered and re-downloaded
+ * art on every open. expo-image memory-disk cache fixes the downloads;
+ * memo + stable props fix the re-renders.
+ */
+const GiftTile = memo(function GiftTile({
+  g, width, isSelected, locked, lockBadge, disabled, onSelect,
+}: {
+  g: GiftItem;
+  width: number;
+  isSelected: boolean;
+  locked: boolean;
+  lockBadge: string | null;
+  disabled: boolean;
+  onSelect: (g: GiftItem) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onSelect(g)}
+      disabled={disabled}
+      style={{
+        width,
+        alignItems: 'center',
+        marginBottom: 14,
+        opacity: locked ? 0.55 : 1,
+      }}>
+      <View style={{
+        width: 64, height: 64, borderRadius: 18,
+        backgroundColor: IMO_TILE,
+        alignItems: 'center', justifyContent: 'center',
+        borderWidth: isSelected ? 2 : 0,
+        borderColor: isSelected ? IMO_BLUE : 'transparent',
+        overflow: 'hidden',
+      }}>
+        {g.thumbnailUrl ? (
+          <ExpoImage
+            source={{ uri: g.thumbnailUrl }}
+            style={{ width: 50, height: 50, borderRadius: 10 }}
+            contentFit="cover"
+            cachePolicy="memory-disk"
+            recyclingKey={g.id}
+          />
+        ) : (
+          <Feather name="gift" size={26} color={IMO_SUB} />
+        )}
+        {locked && lockBadge && (
+          <View style={{
+            position: 'absolute', top: 2, right: 2,
+            backgroundColor: 'rgba(0,0,0,0.6)', borderRadius: 8,
+            paddingHorizontal: 4, paddingVertical: 1,
+          }}>
+            <Text style={{ color: '#FFD54F', fontSize: 9, fontWeight: '700' }}>
+              {lockBadge}
+            </Text>
+          </View>
+        )}
+      </View>
+      <Text
+        style={{ color: IMO_SUB, fontSize: 12, marginTop: 4, textAlign: 'center' }}
+        numberOfLines={1}>
+        {g.nameKey}
+      </Text>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 1 }}>
+        <DiamondIcon size={11} />
+        <Text style={{ color: IMO_SUB, fontSize: 11, marginLeft: 2 }}>
+          {formatCompact(g.coins)}
+        </Text>
+      </View>
+    </Pressable>
+  );
+});
+
+/* ── Component ──────────────────────────────────────────────── */
+
+/* 2026-11-01 (batch56): gift-recipient names — own tiny components
+   because the rows render inline in maps. */
+function PickerName({ uid, name, isSel }: { uid: string; name: string; isSel: boolean }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginTop: 3 }}>
+      <Text style={{ color: isKing ? KING_GOLD : (isSel ? IMO_TITLE : IMO_SUB), fontSize: 10, fontWeight: isSel ? '700' : '400', textAlign: 'center', flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
+function PickerListName({ uid, name }: { uid: string; name: string }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+      <Text style={{ color: isKing ? KING_GOLD : IMO_TITLE, fontSize: 14, fontWeight: '700', flexShrink: 1 }}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
+function ChipName({ uid, name }: { uid: string; name: string }) {
+  const isKing = useIsKing(uid);
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', marginLeft: 6 }}>
+      <Text style={{ color: isKing ? KING_GOLD : IMO_TITLE, fontSize: 12, fontWeight: '700', maxWidth: 80, flexShrink: 1 }} numberOfLines={1}>{name}</Text>
+      {isKing ? <KingSparkle /> : null}
+    </View>
+  );
+}
+
+export function GiftsModal({
+  visible, onClose, onGiftSent, onGiftPlay, members, initialRecipient,
+  walletBalance, myUid, myName, roomId, senderSeated, seats, mySeatIdx, glass }: {
+  visible: boolean;
+  onClose: () => void;
+  /**
+   * Builder D (2026-10-26): true when the sender is seated in this room.
+   * The room caller passes (mySeatIdx >= 0). When omitted, handleSend
+   * falls back to a one-time rooms/{roomId}/seats read (members mixes
+   * seated + audience, so membership alone cannot prove seating).
+   * Undefined = unknown = no couple hearts for these gifts.
+   */
+  senderSeated?: boolean;
+  /** Called after a successful gift send — chat line + room gift events. */
+  onGiftSent: (info: GiftSentInfo) => void;
+  /** 2026-10-21 (boss: gift must play the instant Send is tapped): called
+   *  the moment the balance pre-check passes, BEFORE the wallet round
+   *  trips — plays the local fullscreen show immediately. onGiftSent
+   *  still fires after the sends succeed, for the room-visible records. */
+  onGiftPlay?: (info: GiftSentInfo) => void;
+  members: Participant[];
+  initialRecipient?: Participant | null;
+  /** Real-time wallet balance from Firebase subscription */
+  walletBalance: number;
+  myUid: string;
+  myName: string;
+  roomId?: string;
+  /**
+   * 2026-10-27 (boss: To-row auto-select): live seat array (index =
+   * seat index, null = empty) + sender's seat index (-1 = not seated).
+   * When provided, the To row becomes the quick-pick strip (auto
+   * nearest + up to 5 others + [+]); when omitted, the old
+   * selected-chips row stays.
+   */
+  seats?: Array<Participant | null>;
+  mySeatIdx?: number;
+  /** Glass P1d: resolved room-theme glass (Candidate A). Optional — without
+      it the sheet uses plain light glass. Only the sheet chrome is glass;
+      gift art/thumbnails stay crisp, never under glass. */
+  glass?: ResolvedGlass;
+}) {
+  const { t } = useTranslation();
+  // 2026-11-01 (nav-bar fix): sheet is absolute bottom:0 under
+  // edge-to-edge, so the footer sat behind the system nav bar on
+  // 3-button phones. Bottom spacer carries the nav inset.
+  const insets = useSafeAreaInsets();
+  const [sending, setSending] = useState(false);
+  const [selected, setSelected] = useState<string[]>([]);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [selectedGift, setSelectedGift] = useState<GiftItem | null>(null);
+  // IMO stepper: 1..99
+  const [quantity, setQuantity] = useState<number>(1);
+  const [activeTab, setActiveTab] = useState<ImoTab>('hot');
+  const [serverGifts, setServerGifts] = useState<GiftItem[]>([]);
+  const [giftsLoading, setGiftsLoading] = useState(true);
+  const [recentIds, setRecentIds] = useState<string[]>([]);
+  /** Sender's active SVIP tier (0 = none) — for SVIP-gated gifts. */
+  const [mySvipTier, setMySvipTier] = useState(0);
+  /** Sender's noble rank index (-1 = none) — for noble-gated gifts. */
+  const [myNobleRank, setMyNobleRank] = useState(-1);
+  /* 2026-10-24 (Sumon): self-gift is ADMIN-ONLY and for regular users the
+   * option must not EXIST — no self entry in the picker, no self chip, no
+   * message. Admins (boss testing) still see themselves. */
+  const [selfAllowed, setSelfAllowed] = useState(false);
+
+  useEffect(() => {
+    if (!visible) return;
+    let live = true;
+    canSelfSend(myUid).then((ok) => {
+      if (!live) return;
+      setSelfAllowed(ok);
+      if (!ok) setSelected((prev) => prev.filter((id) => id !== myUid));
+    }).catch(() => {});
+    return () => { live = false; };
+  }, [visible, myUid]);
+
+  const pickableMembers = selfAllowed ? members : members.filter((m) => m.id !== myUid);
+
+  /* ── To-row quick-pick strip (2026-10-27, boss: nearest seat auto-select) ──
+   * Row = [auto-selected nearest seated user] [up to 5 other seated users]
+   * [+ at the end]. Only seated occupants, never the sender. Auto = nearest
+   * by seat-index distance to the sender's seat (tie → lower seat index);
+   * sender not seated → lowest occupied seat index. Auto is sticky while the
+   * modal is open; if the auto user leaves their seat, fall back to the next
+   * nearest seated user (selected when there is room). Explicit choices win:
+   * tapping the auto user off clears the marker, and an initialRecipient
+   * overrides auto-select entirely. Without `seats`, the old chips row renders. */
+  const [autoId, setAutoId] = useState<string | null>(null);
+
+  type SeatedEntry = { idx: number; m: Participant };
+  const seatedOthers = useMemo<SeatedEntry[]>(() => {
+    if (!seats) return [];
+    const out: SeatedEntry[] = [];
+    seats.forEach((m, idx) => {
+      if (m && m.id !== myUid) out.push({ idx, m });
+    });
+    return out;
+  }, [seats, myUid]);
+
+  const computeAuto = useCallback((entries: SeatedEntry[]): Participant | null => {
+    if (entries.length === 0) return null;
+    if (mySeatIdx == null || mySeatIdx < 0) return entries[0].m; // seat order
+    let best = entries[0];
+    for (const e of entries) {
+      const d = Math.abs(e.idx - mySeatIdx);
+      const bd = Math.abs(best.idx - mySeatIdx);
+      if (d < bd || (d === bd && e.idx < best.idx)) best = e;
+    }
+    return best.m;
+  }, [mySeatIdx]);
+
+  // Strip order: auto first (when marked), then other seated users in seat
+  // order, capped so the strip never shows more than 6 DPs before [+].
+  const stripUsers = useMemo<Participant[]>(() => {
+    if (!seats) return [];
+    const auto = autoId
+      ? seatedOthers.find((e) => e.m.id === autoId)?.m ?? null
+      : null;
+    const others = seatedOthers.filter((e) => e.m.id !== autoId).map((e) => e.m);
+    return auto ? [auto, ...others.slice(0, 5)] : others.slice(0, 6);
+  }, [seats, seatedOthers, autoId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { getActiveSvipTier } = await import('@/src/features/svip/svipKickService');
+        const tier = await getActiveSvipTier(myUid);
+        if (!cancelled) setMySvipTier(tier);
+      } catch { /* non-critical — treated as no SVIP */ }
+      try {
+        const { getNobleState } = await import('@/src/services/nobleService');
+        const noble = await getNobleState(myUid);
+        if (!cancelled) setMyNobleRank(noble && noble.rankIndex >= 0 ? noble.rankIndex : -1);
+      } catch { /* non-critical — treated as no noble rank */ }
+    })();
+    return () => { cancelled = true; };
+  }, [myUid, visible]);
+
+  useEffect(() => {
+    if (visible) {
+      setSending(false);
+      setSelectedGift(null);
+      setQuantity(1);
+      setActiveTab('hot');
+      setPickerOpen(false);
+      if (initialRecipient) {
+        setSelected([initialRecipient.id]);
+        setAutoId(null);
+      } else if (seats) {
+        const auto = computeAuto(seatedOthers);
+        setAutoId(auto ? auto.id : null);
+        setSelected(auto ? [auto.id] : []);
+      } else {
+        setSelected([]);
+        setAutoId(null);
+      }
+      AsyncStorage.getItem(`recentGifts:${myUid}`)
+        .then((v) => { if (v) { try { setRecentIds(JSON.parse(v)); } catch { /* ignore */ } } })
+        .catch(() => {});
+    }
+  }, [visible, initialRecipient?.id, myUid]);
+
+  // Live seat-change fallback: if the auto user leaves their seat mid-open,
+  // move the auto marker to the next nearest seated user (and select them
+  // when there is room). Explicit deselects are never overridden: autoId is
+  // null once the user taps the auto user off, and this effect then stays out.
+  useEffect(() => {
+    if (!visible || !seats || !autoId) return;
+    if (seatedOthers.some((e) => e.m.id === autoId)) return;
+    const next = computeAuto(seatedOthers);
+    setAutoId(next ? next.id : null);
+    if (next) {
+      setSelected((prev) => {
+        if (prev.includes(next.id) || prev.length >= MAX_RECIPIENTS) return prev;
+        return [...prev, next.id];
+      });
+    }
+  }, [visible, seats, autoId, seatedOthers, computeAuto]);
+
+  // Server-driven catalog (single source of truth)
+  // 2026-10-21 (boss: voice room loads slowly): this effect used to run on
+  // MOUNT — every room entry downloaded the whole gift catalog and held a
+  // permanent subscription even if gifts were never opened. It now runs
+  // only while the modal is visible (same pattern as the other modals);
+  // the service-level cache makes re-opens instant.
+  useEffect(() => {
+    if (!visible) return;
+    let unsub: (() => void) | null = null;
+    const load = async () => {
+      setGiftsLoading(true);
+      try {
+        const catalog = await fetchGiftCatalog();
+        const items = catalog
+          .filter((cg) => cg.thumbnailUrl && cg.price > 0)
+          .map(catalogToGiftItem);
+        setServerGifts(items);
+      } catch (e) {
+        console.warn('[GiftsModal] catalog fetch failed:', e);
+        setServerGifts([]);
+      } finally {
+        setGiftsLoading(false);
+      }
+    };
+    load();
+    unsub = subscribeGiftCatalog((catalog) => {
+      const items = catalog
+        .filter((cg) => cg.thumbnailUrl && cg.price > 0)
+        .map(catalogToGiftItem);
+      setServerGifts(items);
+      setGiftsLoading(false);
+    });
+    return () => { if (unsub) unsub(); };
+  }, [visible]);
+
+  const getVisibleGifts = useCallback((): GiftItem[] => {
+    switch (activeTab) {
+      case 'rank':
+        return [...serverGifts].sort((a, b) => b.coins - a.coins);
+      case 'recent': {
+        const map = new Map(serverGifts.map((g) => [g.id, g]));
+        return recentIds.map((id) => map.get(id)).filter((g): g is GiftItem => !!g);
+      }
+      case 'event':
+        return serverGifts.filter((g) => g.category === 'event');
+      case 'hot':
+      default:
+        return [...serverGifts].sort((a, b) => a.coins - b.coins);
+    }
+  }, [activeTab, serverGifts, recentIds]);
+
+  const toggleSelect = (id: string) => {
+    // Explicit choice wins: tapping the auto user off clears the marker
+    // (the live-seat fallback effect then stays out).
+    if (id === autoId && selected.includes(id)) setAutoId(null);
+    setSelected((prev) => {
+      if (prev.includes(id)) return prev.filter((x) => x !== id);
+      if (prev.length >= MAX_RECIPIENTS) return prev;
+      return [...prev, id];
+    });
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const removeRecipient = (id: string) => {
+    setSelected((prev) => prev.filter((x) => x !== id));
+  };
+
+  const selectedMembers = pickableMembers.filter((m) => selected.includes(m.id));
+
+  const bumpRecent = useCallback((giftId: string) => {
+    setRecentIds((prev) => {
+      const next = [giftId, ...prev.filter((id) => id !== giftId)].slice(0, 12);
+      AsyncStorage.setItem(`recentGifts:${myUid}`, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, [myUid]);
+
+  /* ── Send (IMO: tap Send → sends immediately, no confirm dialog) ── */
+  const handleSend = async () => {
+    const g = selectedGift;
+    if (!g || selectedMembers.length === 0 || sending) return;
+
+    // SVIP gating (IMO: "Available to SVIP %d or above" / "Cannot send because you are not SVIP")
+    if (g.minSvipLevel && g.minSvipLevel > 0 && mySvipTier < g.minSvipLevel) {
+      Alert.alert(
+        'SVIP Gift',
+        g.minSvipLevel === 1
+          ? 'Cannot send because you are not SVIP.'
+          : `Available to SVIP ${g.minSvipLevel} or above.`,
+      );
+      return;
+    }
+
+    // Noble gating (IMO noble exclusive gifts)
+    if (g.minNobleRank != null && g.minNobleRank >= 0 && myNobleRank < g.minNobleRank) {
+      try {
+        const { NOBLE_RANKS } = await import('@/src/services/nobleService');
+        const rankName = NOBLE_RANKS[g.minNobleRank]?.name || 'Noble';
+        Alert.alert('Noble Gift', `Available to ${rankName} or above.`);
+      } catch {
+        Alert.alert('Noble Gift', 'Available to noble members or above.');
+      }
+      return;
+    }
+
+    const totalCost = g.coins * quantity * selectedMembers.length;
+
+    // 2026-10-21 (boss: instant gift play): wallet init is non-critical —
+    // fire-and-forget instead of taxing every send with its round trip.
+    import('@/src/features/wallet/walletService')
+      .then(({ initializeWallet }) => initializeWallet(myUid))
+      .catch(() => { /* non-critical — proceed with send attempt */ });
+
+    // Balance pre-check. 2026-10-21: the live-subscribed walletBalance prop
+    // IS the same source the UI displays — when it is positive, trust it
+    // and skip the two network reads that used to precede every send (the
+    // send itself still enforces the real balance). Only a zero/unknown
+    // prop falls back to the network chain.
+    let effectiveBalance: number | null = walletBalance > 0 ? walletBalance : null;
+    if (effectiveBalance === null) {
+      try {
+        effectiveBalance = await getWalletBalance(myUid);
+      } catch { /* try next */ }
+    }
+    if (effectiveBalance === null || effectiveBalance === 0) {
+      try {
+        const serverBal = await getBalance();
+        if (serverBal > 0) effectiveBalance = serverBal;
+      } catch { /* use prop */ }
+    }
+    if (effectiveBalance === null || effectiveBalance === 0) effectiveBalance = walletBalance;
+    if (effectiveBalance !== null && effectiveBalance > 0 && effectiveBalance < totalCost) {
+      Alert.alert(
+        t('voiceRoom.gifts.notEnoughCoins'),
+        t('voiceRoom.gifts.notEnoughCoinsMsg', { total: formatCompact(totalCost) }),
+      );
+      return;
+    }
+
+    const recipients = selectedMembers;
+    setSending(true);
+    let didSucceed = false;
+    try {
+      // Builder D (2026-10-26): seated-sender flag for couple hearts.
+      // Preferred source is the senderSeated prop (room caller: mySeatIdx
+      // >= 0). Fallback when omitted: one-time seats read — a seat entry
+      // with userId === myUid proves seating (members includes audience,
+      // so membership alone would falsely count audience senders).
+      // Undefined stays undefined (no hearts); false means seated check
+      // ran and the sender is not seated.
+      let seatedSender: boolean | undefined = senderSeated;
+      if (seatedSender === undefined && roomId) {
+        try {
+          const seatsSnap = await get(ref(database, `rooms/${roomId}/seats`));
+          seatedSender = false;
+          if (seatsSnap.exists()) {
+            seatsSnap.forEach((child) => {
+              const seat = child.val() as { userId?: string } | null;
+              if (seat && seat.userId === myUid) seatedSender = true;
+            });
+          }
+        } catch {
+          seatedSender = undefined;
+        }
+      }
+      // Idempotency: ONE persisted key per (recipient, gift, unit) — a retry
+      // reuses the same keys so the server dedupes instead of double-charging.
+      const keys = new Map<string, string[]>();
+      for (const r of recipients) {
+        const unitKeys: string[] = [];
+        for (let q = 0; q < quantity; q++) {
+          const storeKey = `pendingGiftKey:${myUid}:${r.id}:${g.id}:q${q}`;
+          let key: string | null = null;
+          try {
+            key = await AsyncStorage.getItem(storeKey);
+          } catch { /* non-critical */ }
+          if (!key) {
+            key = Crypto.randomUUID();
+            try {
+              await AsyncStorage.setItem(storeKey, key);
+            } catch { /* non-critical */ }
+          }
+          unitKeys.push(key);
+        }
+        keys.set(r.id, unitKeys);
+      }
+      const senderAvatar = members.find((m) => m.id === myUid)?.photoURL;
+
+      // 2026-10-21 (boss: "ক্লিক করার সাথে সাথেই গিফট টা প্লে হতে থাকে"):
+      // the balance pre-check has passed — play the fullscreen show RIGHT
+      // NOW and close the panel (IMO behavior). The wallet sends below run
+      // in parallel; only the room-visible records (chat line + gift
+      // events via onGiftSent) wait for the sends to actually succeed.
+      if (onGiftPlay) {
+        onGiftPlay({
+          giftId: g.id,
+          emoji: g.thumbnailUrl || '',
+          giftName: g.nameKey,
+          thumbnailUrl: g.thumbnailUrl,
+          quantity,
+          coins: g.coins,
+          senderUid: myUid,
+          senderName: myName,
+          senderAvatar,
+          recipients: recipients.map((r) => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
+          animationUrl: g.animationUrl,
+          animationType: g.animationType,
+          videoSize: g.videoSize,
+          videoFullscreen: g.videoFullscreen,
+        });
+        onClose();
+      }
+
+      const succeeded: Participant[] = [];
+      const failed: { name: string; insufficient: boolean; error?: unknown }[] = [];
+
+      const sendToRecipient = async (r: Participant) => {
+        let recipientOk = true;
+        let recipientErr: unknown = null;
+        let recipientInsufficient = false;
+        for (let q = 0; q < quantity; q++) {
+          const key = keys.get(r.id)![q];
+          let lastErr: unknown = null;
+          let charged = false;
+          for (let attempt = 0; attempt < 2 && !charged; attempt++) {
+            try {
+              await sendGift({
+                toUid: r.id, giftId: g.id, idempotencyKey: key,
+                toName: r.name, toPhotoURL: r.photoURL, price: g.coins,
+                roomId, seatedSender,
+              });
+              charged = true;
+            } catch (e) {
+              lastErr = e;
+              if (!(e instanceof NetworkError)) break;
+            }
+          }
+          if (!charged) {
+            recipientOk = false;
+            recipientErr = lastErr;
+            recipientInsufficient = lastErr instanceof InsufficientFundsError;
+            break;
+          }
+          // Best-effort feed entry — fire and forget.
+          if (roomId) {
+            const entry: Record<string, unknown> = {
+              fromUid: myUid,
+              fromName: myName,
+              toUid: r.id,
+              toName: r.name,
+              giftId: g.id,
+              thumbnailUrl: g.thumbnailUrl,
+              coins: g.coins,
+              ts: serverTimestamp(),
+            };
+            if (senderAvatar) entry.fromAvatar = senderAvatar;
+            if (r.photoURL) entry.toAvatar = r.photoURL;
+            push(ref(database, `rooms/${roomId}/giftFeed`), entry).catch(() => {});
+          }
+        }
+        if (recipientOk) {
+          for (let q = 0; q < quantity; q++) {
+            try {
+              await AsyncStorage.removeItem(`pendingGiftKey:${myUid}:${r.id}:${g.id}:q${q}`);
+            } catch { /* non-critical */ }
+          }
+          return { ok: true as const, recipient: r };
+        }
+        return { ok: false as const, recipient: r, error: recipientErr, insufficient: recipientInsufficient };
+      };
+
+      const results = await Promise.all(recipients.map((r) => sendToRecipient(r)));
+      for (const res of results) {
+        if (res.ok) succeeded.push(res.recipient);
+        else failed.push({ name: res.recipient.name, insufficient: !!res.insufficient, error: res.error });
+      }
+
+      if (succeeded.length === 0) {
+        const allInsufficient = failed.length > 0 && failed.every((f) => f.insufficient);
+        const firstError = failed.find((f) => f.error)?.error;
+        const cause = firstError ? getErrorCause(firstError) : 'Unknown';
+        Alert.alert(
+          allInsufficient ? t('voiceRoom.gifts.notEnoughCoins') : t('voiceRoom.screen.error'),
+          allInsufficient
+            ? t('voiceRoom.gifts.notEnoughCoinsMsg', { total: formatCompact(totalCost) })
+            : `${t('voiceRoom.gifts.sendFailed')}\n\nReason: ${cause}`,
+        );
+        return;
+      }
+
+      if (failed.length > 0) {
+        Alert.alert(
+          t('voiceRoom.gifts.partialSendTitle'),
+          t('voiceRoom.gifts.partialSendMsg', { names: failed.map((f) => f.name).join(', ') }),
+        );
+      }
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      didSucceed = true;
+      bumpRecent(g.id);
+      // IMO: panel closes immediately; the room plays the fullscreen animation.
+      onGiftSent({
+        giftId: g.id,
+        emoji: g.thumbnailUrl || '',
+        giftName: g.nameKey,
+        thumbnailUrl: g.thumbnailUrl,
+        quantity,
+        coins: g.coins,
+        senderUid: myUid,
+        senderName: myName,
+        senderAvatar,
+        recipients: succeeded.map((r) => ({ uid: r.id, name: r.name, photoURL: r.photoURL })),
+        animationUrl: g.animationUrl,
+        animationType: g.animationType,
+        videoSize: g.videoSize,
+        videoFullscreen: g.videoFullscreen,
+      });
+      onClose();
+    } finally {
+      if (!didSucceed) setSending(false);
+    }
+  };
+
+  const roleLabelFor = (m: Participant) => {
+    if (m.role === 'host') return t('voiceRoom.gifts.roleOwner');
+    if (m.role === 'admin') return t('voiceRoom.gifts.roleAdmin');
+    return t('voiceRoom.gifts.roleMember');
+  };
+
+  const totalCost = selectedGift ? selectedGift.coins * quantity * selected.length : 0;
+  const canSend = !!selectedGift && selected.length > 0 && !sending;
+  const screenW = Dimensions.get('window').width;
+
+  const tabs: { id: ImoTab; label: string }[] = [
+    { id: 'hot', label: t('voiceRoom.gifts.tabHot') },
+    { id: 'rank', label: t('voiceRoom.gifts.tabRank') },
+    { id: 'recent', label: t('voiceRoom.gifts.tabRecent') },
+    { id: 'event', label: t('voiceRoom.gifts.tabEvent') },
+  ];
+
+  const handleSelectGift = useCallback((g: GiftItem) => {
+    setSelectedGift(g);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  }, []);
+
+  // Perf (2026-10-22 audit): compute the visible list ONCE per
+  // tab/catalog/recent change — previously getVisibleGifts() ran twice per
+  // render, each time building a fresh array (new FlatList data identity →
+  // full grid re-render on every keystroke of state change).
+  const visibleGifts = useMemo(() => getVisibleGifts(), [getVisibleGifts]);
+
+  const renderGiftTile = useCallback(({ item: g }: { item: GiftItem }) => {
+    const svipLocked = !!g.minSvipLevel && g.minSvipLevel > 0 && mySvipTier < g.minSvipLevel;
+    const nobleLocked = g.minNobleRank != null && g.minNobleRank >= 0 && myNobleRank < g.minNobleRank;
+    const locked = svipLocked || nobleLocked;
+    return (
+      <GiftTile
+        g={g}
+        width={(screenW - 40 - 24) / 4}
+        isSelected={selectedGift?.id === g.id}
+        locked={locked}
+        lockBadge={locked ? (nobleLocked ? '♛' : `👑${g.minSvipLevel}`) : null}
+        disabled={sending}
+        onSelect={handleSelectGift}
+      />
+    );
+  }, [selectedGift?.id, mySvipTier, myNobleRank, sending, screenW, handleSelectGift]);
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent onRequestClose={onClose}>
+      <Pressable
+        style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)' }}
+        onPress={onClose}
+      />
+      {/* Glass P1d: the gift panel chrome is glass `modal` over the dimmed
+          backdrop. Gift tiles/thumbnails/art stay plain Views inside it
+          (never nested glass, never glass over art). */}
+      <GlassView variant="modal" resolved={glass}
+        style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          maxHeight: '88%',
+        }}>
+        {/* ── Close — 2026-10-20 (boss): the 240dp preview header block was
+            REMOVED entirely ("Black ওটা থাকবেই না") — the panel opens
+            directly as the clean white sheet (recipient row → tabs → grid).
+            ✕ re-homed to the sheet's top-right corner, same onClose. The
+            selected gift shows via the grid's selection highlight. ── */}
+        <Pressable
+          onPress={onClose}
+          style={{
+            position: 'absolute', top: 10, right: 12, zIndex: 10,
+            width: 32, height: 32, borderRadius: 16,
+            backgroundColor: '#F1F5F9',
+            alignItems: 'center', justifyContent: 'center',
+          }}>
+          <Feather name="x" size={18} color="#111827" />
+        </Pressable>
+
+        {/* ── Recipient bar (paddingRight clears the ✕ chip) ──
+            2026-10-27 (boss: To-row): with live seats, the row is the
+            quick-pick strip — auto nearest first, up to 5 other seated
+            users, [+] at the end. DP + small name under each; ring =
+            selected (existing picker selection style). Without seats, the
+            old selected-chips row renders unchanged. ── */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'flex-start',
+          paddingHorizontal: 20, paddingRight: 56, paddingTop: 12, paddingBottom: 4,
+        }}>
+          <Text style={{ color: IMO_SUB, fontSize: 13, fontWeight: '600', marginRight: 8, marginTop: 12 }}>
+            {t('voiceRoom.gifts.toLabel')}
+          </Text>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ flex: 1 }}>
+            {seats ? (
+              <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
+                {stripUsers.map((m) => {
+                  const isSel = selected.includes(m.id);
+                  return (
+                    <Pressable
+                      key={m.id}
+                      onPress={() => toggleSelect(m.id)}
+                      style={{ alignItems: 'center', width: 52 }}>
+                      <View style={{
+                        width: 40, height: 40, borderRadius: 20, overflow: 'hidden',
+                        backgroundColor: m.color + '33',
+                        alignItems: 'center', justifyContent: 'center',
+                        borderWidth: 2, borderColor: isSel ? IMO_BLUE : 'transparent',
+                      }}>
+                        {m.photoURL ? (
+                          <Image source={{ uri: m.photoURL }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                        ) : (
+                          <Text style={{ color: m.color, fontSize: 14, fontWeight: '800' }}>{m.initials}</Text>
+                        )}
+                      </View>
+                      <PickerName uid={m.id} name={m.name || 'User'} isSel={isSel} />
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  onPress={() => setPickerOpen((v) => !v)}
+                  style={{ alignItems: 'center', width: 52 }}>
+                  <View style={{
+                    width: 40, height: 40, borderRadius: 20,
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: IMO_BLUE,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                    <Feather name={pickerOpen ? 'chevron-up' : 'plus'} size={16} color={IMO_BLUE} />
+                  </View>
+                  <View style={{ height: 13 }} />
+                </Pressable>
+              </View>
+            ) : (
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                {selectedMembers.map((m) => (
+                  <Pressable
+                    key={m.id}
+                    onPress={() => removeRecipient(m.id)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      backgroundColor: '#e8f7ff', borderRadius: 999,
+                      paddingLeft: 4, paddingRight: 8, paddingVertical: 4,
+                    }}>
+                    {m.photoURL ? (
+                      <Image source={{ uri: m.photoURL }} style={{ width: 24, height: 24, borderRadius: 12 }} />
+                    ) : (
+                      <View style={{
+                        width: 24, height: 24, borderRadius: 12, backgroundColor: m.color + '55',
+                        alignItems: 'center', justifyContent: 'center',
+                      }}>
+                        <Text style={{ color: m.color, fontSize: 11, fontWeight: '800' }}>{m.initials}</Text>
+                      </View>
+                    )}
+                    <ChipName uid={m.id} name={m.name || 'User'} />
+                    <Feather name="x" size={12} color={IMO_SUB} style={{ marginLeft: 4 }} />
+                  </Pressable>
+                ))}
+                <Pressable
+                  onPress={() => setPickerOpen((v) => !v)}
+                  style={{
+                    width: 32, height: 32, borderRadius: 16,
+                    borderWidth: 1.5, borderStyle: 'dashed', borderColor: IMO_BLUE,
+                    alignItems: 'center', justifyContent: 'center',
+                  }}>
+                  <Feather name={pickerOpen ? 'chevron-up' : 'plus'} size={16} color={IMO_BLUE} />
+                </Pressable>
+              </View>
+            )}
+          </ScrollView>
+        </View>
+
+        {/* ── Person picker (expandable) ── */}
+        {pickerOpen && (
+          <View style={{ maxHeight: 220, borderTopWidth: 1, borderTopColor: '#eef0f0', marginTop: 8 }}>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              {pickableMembers.map((m) => {
+                const isSel = selected.includes(m.id);
+                return (
+                  <Pressable
+                    key={m.id}
+                    onPress={() => toggleSelect(m.id)}
+                    style={{
+                      flexDirection: 'row', alignItems: 'center',
+                      paddingVertical: 10, paddingHorizontal: 20,
+                      borderBottomWidth: 1, borderBottomColor: '#f4f5f5',
+                    }}>
+                    <View style={{
+                      width: 40, height: 40, borderRadius: 20, marginRight: 12,
+                      backgroundColor: m.color + '33', overflow: 'hidden',
+                      alignItems: 'center', justifyContent: 'center',
+                      borderWidth: 2, borderColor: isSel ? IMO_BLUE : 'transparent',
+                    }}>
+                      {m.photoURL ? (
+                        <Image source={{ uri: m.photoURL }} style={{ width: 40, height: 40, borderRadius: 20 }} />
+                      ) : (
+                        <Text style={{ color: m.color, fontSize: 14, fontWeight: '800' }}>{m.initials}</Text>
+                      )}
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <PickerListName uid={m.id} name={m.name || 'User'} />
+                      <Text style={{ color: IMO_SUB, fontSize: 11, marginTop: 1 }}>{roleLabelFor(m)}</Text>
+                    </View>
+                    <View style={{
+                      width: 22, height: 22, borderRadius: 11,
+                      backgroundColor: isSel ? IMO_BLUE : 'transparent',
+                      borderWidth: 1.5, borderColor: isSel ? IMO_BLUE : '#d5d8d8',
+                      alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {isSel && <Feather name="check" size={12} color="#fff" />}
+                    </View>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        )}
+
+        {/* ── IMO tabs: Hot / Rank / Recent / Event ── */}
+        <View style={{
+          flexDirection: 'row', paddingHorizontal: 20, marginTop: 10,
+          borderBottomWidth: 1, borderBottomColor: '#eef0f0',
+        }}>
+          {tabs.map((tab) => {
+            const active = activeTab === tab.id;
+            return (
+              <Pressable
+                key={tab.id}
+                onPress={() => {
+                  setActiveTab(tab.id);
+                  setSelectedGift(null);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+                style={{ marginRight: 28, paddingBottom: 10, alignItems: 'center' }}>
+                <Text style={{
+                  fontSize: 14.5, fontWeight: active ? '700' : '400',
+                  color: active ? IMO_TITLE : IMO_SUB,
+                }}>
+                  {tab.label}
+                </Text>
+                {active && (
+                  <View style={{
+                    position: 'absolute', bottom: 0,
+                    width: 26, height: 3.5, borderRadius: 2, backgroundColor: IMO_BLUE,
+                  }} />
+                )}
+              </Pressable>
+            );
+          })}
+        </View>
+
+        {/* ── 4-column gift grid ── */}
+        <View style={{ paddingHorizontal: 20, paddingTop: 14, maxHeight: 300 }}>
+          {giftsLoading ? (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <PremiumLoader size="large" />
+              <Text style={{ color: IMO_SUB, fontSize: 12, marginTop: 12 }}>
+                {t('voiceRoom.gifts.loading')}
+              </Text>
+            </View>
+          ) : visibleGifts.length === 0 ? (
+            <View style={{ alignItems: 'center', paddingVertical: 40 }}>
+              <Text style={{ color: IMO_SUB, fontSize: 13 }}>
+                {t('voiceRoom.gifts.emptyCategory')}
+              </Text>
+            </View>
+          ) : (
+            <FlatList
+              data={visibleGifts}
+              renderItem={renderGiftTile}
+              keyExtractor={(g) => g.id}
+              numColumns={4}
+              showsVerticalScrollIndicator={false}
+              extraData={selectedGift?.id}
+            />
+          )}
+        </View>
+
+        {/* ── IMO footer: balance + stepper + Send ── */}
+        <View style={{
+          flexDirection: 'row', alignItems: 'center',
+          paddingHorizontal: 20, paddingVertical: 14,
+          borderTopWidth: 1, borderTopColor: '#eef0f0',
+          gap: 10,
+        }}>
+          {/* Balance + top-up */}
+          <Pressable
+            onPress={() => { onClose(); router.push('/profile/topup'); }}
+            style={{
+              flexDirection: 'row', alignItems: 'center',
+              backgroundColor: IMO_TILE, borderRadius: 999,
+              paddingHorizontal: 10, paddingVertical: 8, gap: 6,
+            }}>
+            <DiamondIcon size={14} />
+            <Text style={{ color: IMO_TITLE, fontSize: 13, fontWeight: '800' }}>
+              {formatCompact(walletBalance)}
+            </Text>
+            <View style={{
+              width: 20, height: 20, borderRadius: 10, backgroundColor: IMO_BLUE,
+              alignItems: 'center', justifyContent: 'center',
+            }}>
+              <Feather name="plus" size={12} color="#fff" />
+            </View>
+          </Pressable>
+
+          {/* IMO stepper: - xN + */}
+          <View style={{
+            flexDirection: 'row', alignItems: 'center',
+            backgroundColor: IMO_TILE, borderRadius: 999,
+            paddingHorizontal: 4, paddingVertical: 4,
+          }}>
+            <Pressable
+              onPress={() => setQuantity((q) => Math.max(1, q - 1))}
+              style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="minus" size={15} color={quantity > 1 ? IMO_TITLE : '#c9cdcd'} />
+            </Pressable>
+            <Pressable onPress={() => setQuantity((q) => (q >= MAX_QTY ? 1 : Math.min(MAX_QTY, q * 10)))}>
+              <Text style={{ color: IMO_TITLE, fontSize: 14, fontWeight: '800', minWidth: 40, textAlign: 'center' }}>
+                ×{quantity}
+              </Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setQuantity((q) => Math.min(MAX_QTY, q + 1))}
+              style={{ width: 30, height: 30, alignItems: 'center', justifyContent: 'center' }}>
+              <Feather name="plus" size={15} color={quantity < MAX_QTY ? IMO_TITLE : '#c9cdcd'} />
+            </Pressable>
+          </View>
+
+          {/* IMO gradient Send */}
+          <View style={{ flex: 1 }}>
+            <Pressable onPress={handleSend} disabled={!canSend}>
+              <LinearGradient
+                colors={canSend ? [IMO_SEND_FROM, IMO_SEND_TO] : ['#e9ebeb', '#e9ebeb']}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={{
+                  borderRadius: 22, height: 46,
+                  alignItems: 'center', justifyContent: 'center',
+                }}>
+                <Text style={{
+                  color: canSend ? IMO_SEND_TEXT : '#a9adad',
+                  fontSize: 16, fontWeight: '800',
+                }}>
+                  {sending ? '···' : t('voiceRoom.gifts.send')}
+                </Text>
+              </LinearGradient>
+            </Pressable>
+          </View>
+        </View>
+        <View style={{ height: 10 + insets.bottom }} />
+      </GlassView>
+    </Modal>
+  );
+}
+
+export { COMBO_WINDOW_MS, BIG_GIFT_COINS };
