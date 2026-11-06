@@ -1556,7 +1556,7 @@ export default function ProfileScreen({
                       // up-shift leaves the ring 10.64px ABOVE the DP center. Offset +2.4
                       // centers the ring on the DP (10.64px DOWN). Profile only; seats untouched.
                       const isNobleFrame = activeFrameId.startsWith('noble-frame-');
-                      const frameSize = isNobleFrame ? 110 : 92;
+                      const frameSize = (isNobleFrame || activeFrameId.startsWith('svip')) ? 110 : 92;
                       const nobleOffsetY = activeFrameId === 'noble-frame-baron' ? 0 : (activeFrameId === 'noble-frame-duke' ? 2.4 : (activeFrameId === 'noble-frame-king' ? -3.5 : (isNobleFrame ? -8.25 : 0)));
                       // King frame ring center y-frac 0.5315 on the 962x1096 source -> offset -3.5 centers it on DP 46 (55 - 110*0.5315).
                       return (
